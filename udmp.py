@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import sys
 
@@ -73,30 +74,95 @@ def get_clients(session, site_id):
     return r.json().get("data", [])
 
 
+def get_device_detail(session, site_id, device_id):
+    r = session.get(f"{base_url()}/sites/{site_id}/devices/{device_id}", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_ap_radios(session, site_id):
+    """Return one entry per radio, across every access point at the site.
+
+    Only channel/width/frequency are available from this API — no TX power,
+    per-radio client count, or satisfaction score are exposed by the
+    Integration API's device-detail endpoint as of writing.
+    """
+    radios = []
+    for d in get_devices(session, site_id):
+        if "radios" not in d.get("interfaces", []):
+            continue
+        detail = get_device_detail(session, site_id, d["id"])
+        for r in detail.get("interfaces", {}).get("radios", []):
+            radios.append(
+                {
+                    "device": d.get("name", "?"),
+                    "frequencyGHz": r.get("frequencyGHz"),
+                    "channel": r.get("channel"),
+                    "channelWidthMHz": r.get("channelWidthMHz"),
+                }
+            )
+    return radios
+
+
+def find_radio_overlaps(radios):
+    """Pairwise-compare same-band radios and flag co-channel/adjacent-channel overlap.
+
+    2.4GHz channels closer together than 5 (e.g. 1 and 6) overlap in practice;
+    5GHz/6GHz channels only meaningfully collide when identical, since UniFi's
+    channel numbering there is already non-overlapping by design.
+    """
+    warnings = []
+    by_band = {}
+    for r in radios:
+        by_band.setdefault(r["frequencyGHz"], []).append(r)
+
+    for freq, group in by_band.items():
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                a, b = group[i], group[j]
+                if a["channel"] == b["channel"]:
+                    warnings.append(
+                        f"{a['device']} and {b['device']} both on {freq}GHz channel "
+                        f"{a['channel']} — co-channel interference"
+                    )
+                elif freq == 2.4 and abs(a["channel"] - b["channel"]) < 5:
+                    warnings.append(
+                        f"{a['device']} (ch{a['channel']}) and {b['device']} (ch{b['channel']}) "
+                        f"on 2.4GHz are close enough to overlap — space by >=5 channels (1/6/11)"
+                    )
+    return warnings
+
+
+def emit(data):
+    print(json.dumps(data, indent=2))
+
+
 def cmd_sites(args, session):
-    for s in get_sites(session):
-        print(f"{s.get('id')}  {s.get('name', '')}")
+    emit(get_sites(session))
 
 
 def cmd_devices(args, session):
     site_id = resolve_site_id(session, args.site)
-    for d in get_devices(session, site_id):
-        print(
-            f"{d.get('name', '?'):20} {d.get('model', '?'):15} "
-            f"{d.get('state', '?'):10} {d.get('ipAddress', '')}"
-        )
+    emit(get_devices(session, site_id))
 
 
 def cmd_clients(args, session):
     site_id = resolve_site_id(session, args.site)
-    for c in get_clients(session, site_id):
-        name = c.get("name") or c.get("hostname") or c.get("macAddress")
-        print(f"{name:25} {c.get('ipAddress', ''):15} {c.get('macAddress', '')}")
+    emit(get_clients(session, site_id))
+
+
+def cmd_radios(args, session):
+    site_id = resolve_site_id(session, args.site)
+    radios = get_ap_radios(session, site_id)
+    emit({"radios": radios, "warnings": find_radio_overlaps(radios)})
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Query a UniFi Dream Machine Pro via the local Network Integration API"
+        description=(
+            "Query a UniFi Dream Machine Pro via the local Network Integration API. "
+            "Emits JSON on stdout for programmatic consumption."
+        )
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -108,6 +174,11 @@ def build_parser():
     p_clients = sub.add_parser("clients", help="List connected clients")
     p_clients.add_argument("--site", help="Site id or name (default: first site)")
 
+    p_radios = sub.add_parser(
+        "radios", help="List AP radios (channel/width) and flag overlapping channels"
+    )
+    p_radios.add_argument("--site", help="Site id or name (default: first site)")
+
     return parser
 
 
@@ -117,7 +188,12 @@ def main():
     args = build_parser().parse_args()
     session = make_session()
 
-    commands = {"sites": cmd_sites, "devices": cmd_devices, "clients": cmd_clients}
+    commands = {
+        "sites": cmd_sites,
+        "devices": cmd_devices,
+        "clients": cmd_clients,
+        "radios": cmd_radios,
+    }
     try:
         commands[args.command](args, session)
     except requests.HTTPError as e:
