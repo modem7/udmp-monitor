@@ -20,6 +20,10 @@ def get_api_key():
 
 
 def get_verify_ssl():
+    # UniFi OS ships a self-signed cert by default, so TLS verification is
+    # off unless the controller has a trusted cert and UDMP_VERIFY_SSL=true
+    # is set. This is a same-LAN, API-key-authenticated connection, not an
+    # internet-facing one — MITM risk is limited to the local network.
     return os.environ.get("UDMP_VERIFY_SSL", "false").lower() == "true"
 
 
