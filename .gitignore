@@ -1,0 +1,16 @@
+# Local secrets — never commit real credentials
+.env
+*.env.local
+
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Claude Code local settings
+.claude/

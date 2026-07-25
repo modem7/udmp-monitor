@@ -1,0 +1,27 @@
+# https://github.com/apps/settings
+# https://github.com/repository-settings/app
+
+_extends: .github
+repository:
+  name: udmp-monitor
+  description: >-
+    Read-only CLI for querying a UniFi Dream Machine Pro over its local
+    UniFi OS Network Integration API — sites, devices, and clients.
+  homepage: ""
+  topics: unifi, udm-pro, ubiquiti, homelab, self-hosted, python, cli, networking
+  private: true
+  has_issues: true
+  has_wiki: false
+  has_downloads: true
+  has_projects: false
+  has_discussions: false
+  default_branch: master
+  allow_squash_merge: true
+  allow_rebase_merge: true
+  allow_merge_commit: true
+  # Auto-delete head branches after merge
+  delete_branch_on_merge: true
+  # Always suggest updating PR branches that are behind base
+  allow_update_branch: true
+  enable_automated_security_fixes: true
+  enable_vulnerability_alerts: true
