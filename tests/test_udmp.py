@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -105,7 +106,7 @@ def test_get_clients_returns_data_list():
     assert udmp.get_clients(session, "s1") == [{"name": "laptop"}]
 
 
-def test_cmd_devices_prints_rows(capsys):
+def test_cmd_devices_prints_json(capsys):
     session = fake_session(
         {
             "/sites": {"data": [{"id": "s1", "name": "Home"}]},
@@ -118,15 +119,112 @@ def test_cmd_devices_prints_rows(capsys):
     )
     args = MagicMock(site=None)
     udmp.cmd_devices(args, session)
-    out = capsys.readouterr().out
-    assert "USW" in out
-    assert "10.0.0.2" in out
+    out = json.loads(capsys.readouterr().out)
+    assert out == [{"name": "USW", "model": "US-8", "state": "ONLINE", "ipAddress": "10.0.0.2"}]
 
 
 def test_build_parser_requires_a_command():
     parser = udmp.build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args([])
+
+
+def test_get_device_detail_returns_json():
+    session = fake_session({"/sites/s1/devices/d1": {"id": "d1", "name": "AP"}})
+    assert udmp.get_device_detail(session, "s1", "d1") == {"id": "d1", "name": "AP"}
+
+
+def test_get_ap_radios_skips_non_ap_devices_and_flattens_radios():
+    session = fake_session(
+        {
+            "/sites/s1/devices": {
+                "data": [
+                    {"id": "ap1", "name": "Legolas", "interfaces": ["radios"]},
+                    {"id": "sw1", "name": "Switch", "interfaces": []},
+                ]
+            },
+            "/sites/s1/devices/ap1": {
+                "interfaces": {
+                    "radios": [
+                        {"frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20},
+                        {"frequencyGHz": 5, "channel": 153, "channelWidthMHz": 80},
+                    ]
+                }
+            },
+        }
+    )
+    radios = udmp.get_ap_radios(session, "s1")
+    assert len(radios) == 2
+    assert radios[0]["device"] == "Legolas"
+    assert radios[0]["channel"] == 1
+
+
+def test_find_radio_overlaps_flags_co_channel():
+    radios = [
+        {"device": "AP1", "frequencyGHz": 5, "channel": 100, "channelWidthMHz": 80},
+        {"device": "AP2", "frequencyGHz": 5, "channel": 100, "channelWidthMHz": 80},
+    ]
+    warnings = udmp.find_radio_overlaps(radios)
+    assert len(warnings) == 1
+    assert "co-channel" in warnings[0]
+
+
+def test_find_radio_overlaps_flags_close_24ghz_channels():
+    radios = [
+        {"device": "AP1", "frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20},
+        {"device": "AP2", "frequencyGHz": 2.4, "channel": 3, "channelWidthMHz": 20},
+    ]
+    warnings = udmp.find_radio_overlaps(radios)
+    assert len(warnings) == 1
+    assert "overlap" in warnings[0]
+
+
+def test_find_radio_overlaps_allows_spaced_24ghz_channels():
+    radios = [
+        {"device": "AP1", "frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20},
+        {"device": "AP2", "frequencyGHz": 2.4, "channel": 6, "channelWidthMHz": 20},
+        {"device": "AP3", "frequencyGHz": 2.4, "channel": 11, "channelWidthMHz": 20},
+    ]
+    assert udmp.find_radio_overlaps(radios) == []
+
+
+def test_find_radio_overlaps_ignores_different_bands():
+    radios = [
+        {"device": "AP1", "frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20},
+        {"device": "AP2", "frequencyGHz": 5, "channel": 1, "channelWidthMHz": 80},
+    ]
+    assert udmp.find_radio_overlaps(radios) == []
+
+
+def test_cmd_radios_prints_json_with_warnings(capsys):
+    session = fake_session(
+        {
+            "/sites": {"data": [{"id": "s1", "name": "Home"}]},
+            "/sites/s1/devices": {
+                "data": [
+                    {"id": "ap1", "name": "Legolas", "interfaces": ["radios"]},
+                    {"id": "ap2", "name": "Aragorn", "interfaces": ["radios"]},
+                ]
+            },
+            "/sites/s1/devices/ap1": {
+                "interfaces": {
+                    "radios": [{"frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20}]
+                }
+            },
+            "/sites/s1/devices/ap2": {
+                "interfaces": {
+                    "radios": [{"frequencyGHz": 2.4, "channel": 1, "channelWidthMHz": 20}]
+                }
+            },
+        }
+    )
+    args = MagicMock(site=None)
+    udmp.cmd_radios(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert len(out["radios"]) == 2
+    assert {r["device"] for r in out["radios"]} == {"Legolas", "Aragorn"}
+    assert len(out["warnings"]) == 1
+    assert "co-channel" in out["warnings"][0]
 
 
 def test_build_parser_accepts_devices_with_site():
