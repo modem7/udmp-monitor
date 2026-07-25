@@ -57,6 +57,12 @@ jobs:
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
+    # Account default workflow token permission is read-only with no
+    # pull-requests scope; gitleaks-action needs pull-requests:read to list
+    # commits on a PR event.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7.0.1
         with:
