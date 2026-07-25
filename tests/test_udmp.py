@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -105,7 +106,7 @@ def test_get_clients_returns_data_list():
     assert udmp.get_clients(session, "s1") == [{"name": "laptop"}]
 
 
-def test_cmd_devices_prints_rows(capsys):
+def test_cmd_devices_prints_json(capsys):
     session = fake_session(
         {
             "/sites": {"data": [{"id": "s1", "name": "Home"}]},
@@ -118,9 +119,8 @@ def test_cmd_devices_prints_rows(capsys):
     )
     args = MagicMock(site=None)
     udmp.cmd_devices(args, session)
-    out = capsys.readouterr().out
-    assert "USW" in out
-    assert "10.0.0.2" in out
+    out = json.loads(capsys.readouterr().out)
+    assert out == [{"name": "USW", "model": "US-8", "state": "ONLINE", "ipAddress": "10.0.0.2"}]
 
 
 def test_build_parser_requires_a_command():
@@ -196,7 +196,7 @@ def test_find_radio_overlaps_ignores_different_bands():
     assert udmp.find_radio_overlaps(radios) == []
 
 
-def test_cmd_radios_prints_rows_and_warnings(capsys):
+def test_cmd_radios_prints_json_with_warnings(capsys):
     session = fake_session(
         {
             "/sites": {"data": [{"id": "s1", "name": "Home"}]},
@@ -220,11 +220,11 @@ def test_cmd_radios_prints_rows_and_warnings(capsys):
     )
     args = MagicMock(site=None)
     udmp.cmd_radios(args, session)
-    out = capsys.readouterr().out
-    assert "Legolas" in out
-    assert "Aragorn" in out
-    assert "WARNING" in out
-    assert "co-channel" in out
+    out = json.loads(capsys.readouterr().out)
+    assert len(out["radios"]) == 2
+    assert {r["device"] for r in out["radios"]} == {"Legolas", "Aragorn"}
+    assert len(out["warnings"]) == 1
+    assert "co-channel" in out["warnings"][0]
 
 
 def test_build_parser_accepts_devices_with_site():

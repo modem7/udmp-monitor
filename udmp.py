@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import sys
 
@@ -132,44 +133,36 @@ def find_radio_overlaps(radios):
     return warnings
 
 
+def emit(data):
+    print(json.dumps(data, indent=2))
+
+
 def cmd_sites(args, session):
-    for s in get_sites(session):
-        print(f"{s.get('id')}  {s.get('name', '')}")
+    emit(get_sites(session))
 
 
 def cmd_devices(args, session):
     site_id = resolve_site_id(session, args.site)
-    for d in get_devices(session, site_id):
-        print(
-            f"{d.get('name', '?'):20} {d.get('model', '?'):15} "
-            f"{d.get('state', '?'):10} {d.get('ipAddress', '')}"
-        )
+    emit(get_devices(session, site_id))
 
 
 def cmd_clients(args, session):
     site_id = resolve_site_id(session, args.site)
-    for c in get_clients(session, site_id):
-        name = c.get("name") or c.get("hostname") or c.get("macAddress")
-        print(f"{name:25} {c.get('ipAddress', ''):15} {c.get('macAddress', '')}")
+    emit(get_clients(session, site_id))
 
 
 def cmd_radios(args, session):
     site_id = resolve_site_id(session, args.site)
     radios = get_ap_radios(session, site_id)
-    for r in radios:
-        freq, chan, width = r["frequencyGHz"], r["channel"], r["channelWidthMHz"]
-        print(f"{r['device']:20} {freq}GHz  ch{chan:<4} {width}MHz")
-
-    overlaps = find_radio_overlaps(radios)
-    if overlaps:
-        print()
-        for w in overlaps:
-            print(f"WARNING: {w}")
+    emit({"radios": radios, "warnings": find_radio_overlaps(radios)})
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Query a UniFi Dream Machine Pro via the local Network Integration API"
+        description=(
+            "Query a UniFi Dream Machine Pro via the local Network Integration API. "
+            "Emits JSON on stdout for programmatic consumption."
+        )
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

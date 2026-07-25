@@ -4,9 +4,18 @@ Read this automatically at the start of every session in this repo.
 
 ## What this is
 
-A read-only CLI against a UniFi Dream Machine Pro's local UniFi OS Network
+A read-only tool against a UniFi Dream Machine Pro's local UniFi OS Network
 Integration API (`/proxy/network/integration/v1`), authenticated with an
 API key. Nothing in this tool writes to the controller — it only reads.
+
+**This exists for Claude to run directly, not for a human to operate.**
+When the user asks about their network (device status, AP channel health,
+clients, etc.), the answer is to invoke `python3 udmp.py <command>` via
+Bash and report back — not to hand the user a command to run themselves.
+Every command emits JSON on stdout for exactly that reason: reliable
+machine parsing over human-readable table formatting. Don't add
+`--pretty`/table-output modes or other human-CLI ergonomics unless the
+user explicitly asks for them — they're not the target user.
 
 ## Ground rules, non-negotiable
 
