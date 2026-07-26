@@ -20,6 +20,14 @@ def get_api_key():
     return os.environ.get("UDMP_API_KEY")
 
 
+def get_ui_username():
+    return os.environ.get("UDMP_UI_USERNAME")
+
+
+def get_ui_password():
+    return os.environ.get("UDMP_UI_PASSWORD")
+
+
 def get_verify_ssl():
     # UniFi OS ships a self-signed cert by default, so TLS verification is
     # off unless the controller has a trusted cert and UDMP_VERIFY_SSL=true
@@ -32,9 +40,17 @@ def base_url():
     return f"https://{get_host()}/proxy/network/integration/v1"
 
 
-def require_config():
+def require_api_config():
     if not get_host() or not get_api_key():
         sys.exit("UDMP_HOST and UDMP_API_KEY must be set (env vars or .env file)")
+
+
+def require_ui_config():
+    if not get_host() or not get_ui_username() or not get_ui_password():
+        sys.exit(
+            "UDMP_HOST, UDMP_UI_USERNAME, and UDMP_UI_PASSWORD must be set "
+            "(env vars or .env file) for this command"
+        )
 
 
 def make_session():
@@ -42,6 +58,146 @@ def make_session():
     session.headers.update({"X-API-Key": get_api_key(), "Accept": "application/json"})
     session.verify = get_verify_ssl()
     return session
+
+
+def legacy_base_url():
+    return f"https://{get_host()}/proxy/network/api"
+
+
+def make_legacy_session():
+    """Session-cookie auth against UniFi OS's older, undocumented network API.
+
+    Only used for data the official Integration API doesn't expose (WLAN/SSID
+    config as of writing — confirmed via direct probing, not assumed). Uses a
+    dedicated, read-only-role local admin account, not the API key.
+    """
+    session = requests.Session()
+    session.verify = get_verify_ssl()
+    r = session.post(
+        f"https://{get_host()}/api/auth/login",
+        json={"username": get_ui_username(), "password": get_ui_password()},
+        timeout=10,
+    )
+    r.raise_for_status()
+    session.headers.update({"x-csrf-token": r.headers.get("x-csrf-token", "")})
+    return session
+
+
+def get_legacy_sites(session):
+    r = session.get(f"{legacy_base_url()}/self/sites", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def resolve_legacy_site_name(session, site_arg):
+    sites = get_legacy_sites(session)
+    if not sites:
+        sys.exit("No sites returned by controller")
+    if site_arg:
+        for s in sites:
+            if site_arg in (s.get("name"), s.get("desc")):
+                return s["name"]
+        sys.exit(f"Site '{site_arg}' not found")
+    return sites[0]["name"]
+
+
+def get_wlans(session, site_name):
+    r = session.get(f"{legacy_base_url()}/s/{site_name}/rest/wlanconf", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def get_legacy_networks(session, site_name):
+    r = session.get(f"{legacy_base_url()}/s/{site_name}/rest/networkconf", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+# Fields worth surfacing for a WiFi config review — security posture and
+# roaming/isolation behavior, not every low-level radio knob wlanconf has.
+WLAN_SUMMARY_FIELDS = [
+    "name",
+    "enabled",
+    "is_guest",
+    "security",
+    "wpa_mode",
+    "wpa3_support",
+    "wpa3_transition",
+    "pmf_mode",
+    "fast_roaming_enabled",
+    "bss_transition",
+    "rrm_enabled",
+    "hide_ssid",
+    "wlan_bands",
+    "mac_filter_enabled",
+    "l2_isolation",
+    "mcastenhance_enabled",
+]
+
+
+def summarize_wlans(wlans, networks):
+    net_by_id = {n["_id"]: n for n in networks}
+    summary = []
+    for w in wlans:
+        row = {f: w.get(f) for f in WLAN_SUMMARY_FIELDS}
+        net = net_by_id.get(w.get("networkconf_id"), {})
+        row["vlan_id"] = net.get("vlan")
+        row["network_name"] = net.get("name")
+        summary.append(row)
+    return summary
+
+
+def legacy_v2_base_url():
+    return f"https://{get_host()}/proxy/network/v2/api"
+
+
+def get_firewall_policies(session, site_name):
+    r = session.get(f"{legacy_v2_base_url()}/site/{site_name}/firewall-policies", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_firewall_groups(session, site_name):
+    r = session.get(f"{legacy_base_url()}/s/{site_name}/rest/firewallgroup", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def summarize_firewall_policies(policies, groups):
+    """Custom (non-predefined) policies only, sorted by priority order.
+
+    `predefined` policies are the built-in zone-matrix defaults (dozens of
+    near-duplicate allow/block-established rules per zone pair) — noise for
+    a review, so they're filtered out here. `index` is the actual priority:
+    lower is evaluated first, and this API is first-match-wins, so ordering
+    matters for understanding which rule actually applies.
+
+    Zone names aren't resolvable — the controller has no endpoint exposing
+    them (confirmed 404) — so `zone_id` is passed through raw rather than
+    guessed at.
+    """
+    group_by_id = {g["_id"]: g.get("name") for g in groups}
+
+    def resolve_endpoint(ep):
+        out = {"zone_id": ep.get("zone_id")}
+        if ep.get("ip_group_id"):
+            out["group"] = group_by_id.get(ep["ip_group_id"], ep["ip_group_id"])
+        return out
+
+    custom = [p for p in policies if not p.get("predefined")]
+    custom.sort(key=lambda p: p.get("index", 0))
+    return [
+        {
+            "index": p.get("index"),
+            "name": p.get("name"),
+            "action": p.get("action"),
+            "enabled": p.get("enabled"),
+            "protocol": p.get("protocol"),
+            "source": resolve_endpoint(p.get("source", {})),
+            "destination": resolve_endpoint(p.get("destination", {})),
+        }
+        for p in custom
+    ]
 
 
 def get_sites(session):
@@ -157,6 +313,20 @@ def cmd_radios(args, session):
     emit({"radios": radios, "warnings": find_radio_overlaps(radios)})
 
 
+def cmd_wlans(args, session):
+    site_name = resolve_legacy_site_name(session, args.site)
+    wlans = get_wlans(session, site_name)
+    networks = get_legacy_networks(session, site_name)
+    emit(summarize_wlans(wlans, networks))
+
+
+def cmd_firewall(args, session):
+    site_name = resolve_legacy_site_name(session, args.site)
+    policies = get_firewall_policies(session, site_name)
+    groups = get_firewall_groups(session, site_name)
+    emit(summarize_firewall_policies(policies, groups))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -179,22 +349,45 @@ def build_parser():
     )
     p_radios.add_argument("--site", help="Site id or name (default: first site)")
 
+    p_wlans = sub.add_parser(
+        "wlans",
+        help=(
+            "List WLAN/SSID config (security, roaming, isolation, VLAN) via the "
+            "legacy session API — requires UDMP_UI_USERNAME/UDMP_UI_PASSWORD"
+        ),
+    )
+    p_wlans.add_argument("--site", help="Site short name or description (default: first site)")
+
+    p_firewall = sub.add_parser(
+        "firewall",
+        help=(
+            "List custom firewall policies (priority order) via the legacy session "
+            "API — requires UDMP_UI_USERNAME/UDMP_UI_PASSWORD"
+        ),
+    )
+    p_firewall.add_argument("--site", help="Site short name or description (default: first site)")
+
     return parser
 
 
 def main():
-    require_config()
-
     args = build_parser().parse_args()
-    session = make_session()
 
     commands = {
         "sites": cmd_sites,
         "devices": cmd_devices,
         "clients": cmd_clients,
         "radios": cmd_radios,
+        "wlans": cmd_wlans,
+        "firewall": cmd_firewall,
     }
     try:
+        if args.command in ("wlans", "firewall"):
+            require_ui_config()
+            session = make_legacy_session()
+        else:
+            require_api_config()
+            session = make_session()
         commands[args.command](args, session)
     except requests.HTTPError as e:
         sys.exit(f"API request failed: {e}")
