@@ -12,11 +12,11 @@ credentials against two separate APIs:
 - **Legacy/undocumented session API** (`/proxy/network/api/...` and
   `/proxy/network/v2/api/...`), cookie auth via a dedicated, read-only-role
   local admin account (`UDMP_UI_USERNAME`/`UDMP_UI_PASSWORD`). Commands:
-  `wlans`, `firewall`. This is what community tools like `node-unifi`/
-  unifi-poller use — unofficial, undocumented, can change without notice
-  on a firmware update. Used only because the Integration API doesn't
-  expose WLAN/SSID config or firewall policies at all (confirmed by
-  probing, not assumed — see below).
+  `wlans`, `firewall`, `networks`, `ports`, `known-clients`. This is what
+  community tools like `node-unifi`/unifi-poller use — unofficial,
+  undocumented, can change without notice on a firmware update. Used only
+  because the Integration API doesn't expose WLAN/SSID config or firewall
+  policies at all (confirmed by probing, not assumed — see below).
 
 Access is deliberately API-only, not SSH — the user explicitly ruled SSH
 out. Nothing in this tool writes to the controller — it only reads.
@@ -60,6 +60,64 @@ user explicitly asks for them — they're not the target user.
     `firewall-policies`) are confirmed working. There's no endpoint that
     resolves firewall zone IDs to human names — `zone_id` is passed through
     raw in `firewall` output rather than guessed at.
+  - `rest/user` (all clients ever seen, not just connected) has a
+    `product_line`/`unifi_device_info_from_ucore` field on Protect devices
+    (cameras, NVR, chime) that reveals their real model — those devices
+    never show up as adopted Network-app devices, only as clients. Worth
+    checking there before assuming Protect hardware is undocumentable.
+  - `port_overrides` (per-port name/native-VLAN/PoE intent) only exists on
+    `stat/device` (legacy), not the Integration API's device detail —
+    that endpoint only has live port state/speed, not configured intent.
+- **`firewall-policies` has a real duplication quirk, not a bug in this
+  code**: a rule targeting "any network" on one side gets stored as one
+  policy document per concrete zone pair — the same index/name/action
+  repeated 3-4x with only `zone_id` differing. `summarize_firewall_policies`
+  dedupes by `(index, name, action)`, keeping the first occurrence. This
+  was caught by the `known-clients`/dashboard work producing a 96-row
+  firewall table that should have been ~44 rows — always sanity-check a
+  new summarize function's output count against what a human would expect,
+  not just against a green test suite.
+
+## Local dashboards (`docs/`)
+
+`docs/dashboard-live.html` + `docs/dashboard_server.py` is the one HTML
+view of this tool's read-only data — see `README.md` for how to run it.
+There is no separate static-generation script or committed static HTML
+file; the **Save snapshot** button in the live page exports whatever's
+currently rendered (same CSS/markup, pulled straight from the DOM) as a
+standalone file with no server dependency. Don't reintroduce a second,
+separately-maintained static build — it will drift from the live version.
+
+`docs/dashboard_server.py` binds `127.0.0.1` by default; if testing it
+manually (not through the webapp-testing skill's `with_server.py`, which
+cleans up after itself), check `lsof -i :8765` for an orphaned process
+from a previous run before trusting `curl`/browser output against it —
+a stale process silently serving old code looks identical to a real bug.
+This bit twice while building this feature: once making a real fix look
+like it hadn't worked, once making a DNS-rebinding fix look like it hadn't
+worked either. Always check first.
+
+**Every value interpolated into `innerHTML` in `dashboard-live.html` must
+go through `esc()`, including inside `data-search="..."` attributes.**
+`esc()` escapes `"`/`'` as well as `&<>` for exactly this reason — a value
+placed inside a double-quoted attribute can break out of it via an
+unescaped quote even if `&<>` are handled. Device names, network/SSID
+names, firewall rule/group names, and switch port names are all
+UniFi-side user-editable strings (some, like client hostnames, can even
+be attacker-supplied via DHCP) — treat all of them as untrusted input, not
+just the ones that "feel" attacker-controlled. Two real XSS bugs here came
+from raw (non-`esc()`) interpolation slipping through code review; caught
+only by a security scan, not by testing, so also grep for bare `+ <field>
++` concatenation patterns when reviewing this file, don't just trust the
+functions that do call `esc()` correctly.
+
+`docs/dashboard_server.py`'s `_host_is_allowed()` exists specifically to
+block DNS-rebinding attacks: it only serves requests whose `Host` header
+is `localhost` or a literal IP, never an arbitrary DNS name, regardless of
+what `UDMP_DASHBOARD_HOST` is bound to. Don't relax this to allow specific
+hostnames without understanding why it's IP-or-localhost-only in the first
+place — the whole point is that a rebinding attack's `Host` header is
+always a real domain name, never an IP.
 
 ## Before considering any change "done"
 

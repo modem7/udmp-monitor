@@ -52,11 +52,43 @@ python3 udmp.py clients  [--site <id-or-name>]
 python3 udmp.py radios   [--site <id-or-name>]   # AP channel/width + overlap warnings
 
 # legacy API — needs UDMP_UI_USERNAME/UDMP_UI_PASSWORD
-python3 udmp.py wlans    [--site <name-or-desc>]  # SSID config: security, roaming, isolation, VLAN
-python3 udmp.py firewall [--site <name-or-desc>]  # custom firewall policies, priority order
+python3 udmp.py wlans          [--site <name-or-desc>]  # SSID config: security, roaming, isolation, VLAN
+python3 udmp.py firewall       [--site <name-or-desc>]  # custom firewall policies, priority order
+python3 udmp.py networks       [--site <name-or-desc>]  # VLANs, subnets, DHCP, WAN config
+python3 udmp.py ports          [--site <name-or-desc>]  # per-switch port name/VLAN/PoE assignments
+python3 udmp.py known-clients  [--site <name-or-desc>] [--all]  # all clients ever seen, not just connected (fixed-IP only by default)
 ```
 
 If `--site` is omitted, the first site returned by the controller is used.
+
+## Documentation
+
+`docs/NETWORK.md` is a disaster-recovery-level writeup of the whole
+network (hardware, WAN, VLANs, switch ports, wireless, firewall, clients)
+generated from live controller data — regenerate by re-running the
+gathering steps described at the bottom of that file.
+
+**`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** is a
+local-only live dashboard that queries the controller fresh on every load:
+
+```bash
+python3 docs/dashboard_server.py
+# open http://127.0.0.1:8765
+```
+
+Binds to `127.0.0.1` by default (this machine only). Set
+`UDMP_DASHBOARD_HOST=0.0.0.0` to make it reachable from elsewhere on your
+LAN — it has no authentication of its own, so don't expose it beyond a
+trusted network (it does validate the `Host` header to block DNS-rebinding
+attacks, but that's not the same thing as auth).
+
+**Static snapshots** are generated on demand, not committed to the repo —
+click **Save snapshot** in the live dashboard's header. It exports
+whatever's currently rendered (same styling, same data, search/filters
+still work) as one self-contained HTML file with no server dependency,
+safe to share, store, or back up as-is. There's no separate generation
+script to keep in sync; the live dashboard *is* the source, and a snapshot
+is just "what it showed, frozen," downloaded straight from the browser.
 
 ## Development
 
