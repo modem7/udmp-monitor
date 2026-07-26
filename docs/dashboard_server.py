@@ -12,6 +12,7 @@ Usage:
     open http://127.0.0.1:8765
 """
 
+import ipaddress
 import json
 import os
 import sys
@@ -70,11 +71,42 @@ def gather_live():
     }
 
 
+def _host_is_allowed(host_header):
+    """DNS-rebinding defense: only serve requests whose Host header is
+    'localhost' or a literal IP address — never an arbitrary DNS name.
+
+    A rebinding attack works by having some-domain.com resolve to this
+    server's IP *after* the browser already loaded a page from
+    some-domain.com, so its same-origin checks think it's still talking to
+    that domain — but the Host header it sends is still "some-domain.com",
+    not an IP or "localhost". Rejecting anything that isn't one of those
+    two shapes closes that off regardless of what UDMP_DASHBOARD_HOST is
+    bound to.
+    """
+    if not host_header:
+        return False
+    hostname = host_header.rsplit(":", 1)[0] if ":" in host_header else host_header
+    hostname = hostname.strip("[]")  # IPv6 literals arrive as [::1]:port
+    if hostname == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        return False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # keep stdout quiet; errors still raise
 
     def do_GET(self):
+        if not _host_is_allowed(self.headers.get("Host")):
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Forbidden: Host header not allowed (DNS-rebinding protection)")
+            return
         if self.path == "/api/data":
             self._serve_data()
         elif self.path in ("/", "/index.html"):

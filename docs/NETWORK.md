@@ -406,21 +406,24 @@ PXE boot server at `.106`, syslog targets at `.114`/`.115`.
 
 All data above (except the client-record device-type enrichment in §1/§9,
 which used `rest/user`'s richer `unifi_device_info_from_ucore` field
-directly) can be pulled fresh via the tool this repo already has:
+directly, and the IPS/DoH/RADIUS/etc. settings in §8, which aren't wrapped
+in a command) can be pulled fresh via the CLI:
 
 ```bash
 python3 udmp.py sites
 python3 udmp.py devices
 python3 udmp.py clients
 python3 udmp.py radios
-python3 udmp.py wlans      # needs UDMP_UI_USERNAME/PASSWORD
-python3 udmp.py firewall   # needs UDMP_UI_USERNAME/PASSWORD
+python3 udmp.py wlans          # needs UDMP_UI_USERNAME/PASSWORD
+python3 udmp.py firewall       # needs UDMP_UI_USERNAME/PASSWORD
+python3 udmp.py networks       # needs UDMP_UI_USERNAME/PASSWORD
+python3 udmp.py ports          # needs UDMP_UI_USERNAME/PASSWORD
+python3 udmp.py known-clients  # needs UDMP_UI_USERNAME/PASSWORD
 ```
 
-Networkconf (VLANs/DHCP/WAN), firewall groups, switch port overrides, and
-the full known-client list (incl. static reservations) aren't yet
-first-class commands — they were pulled ad hoc for this document via the
-same `make_legacy_session()`/`legacy_base_url()` helpers already in
-`udmp.py`, hitting `rest/networkconf`, `rest/firewallgroup`, `stat/device`,
-and `rest/user`. Worth promoting to real commands if this document gets
-regenerated regularly.
+For an interactive, always-current view of the same data without
+re-running commands by hand, use the live dashboard
+(`python3 docs/dashboard_server.py`, see `README.md`) — its **Save
+snapshot** button exports the current rendered state as a standalone
+HTML file whenever you need a point-in-time copy, so there's no separate
+static-generation step to keep in sync with this file.

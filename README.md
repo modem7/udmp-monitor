@@ -68,22 +68,27 @@ network (hardware, WAN, VLANs, switch ports, wireless, firewall, clients)
 generated from live controller data — regenerate by re-running the
 gathering steps described at the bottom of that file.
 
-Two HTML views of the same data:
+**`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** is a
+local-only live dashboard that queries the controller fresh on every load:
 
-- **`docs/network-dashboard-static.html`** — a self-contained snapshot,
-  safe to open, share, store, or back up as-is. Doesn't change until
-  regenerated.
-- **`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** — a
-  local-only live dashboard that queries the controller fresh on every
-  load:
-  ```bash
-  python3 docs/dashboard_server.py
-  # open http://127.0.0.1:8765
-  ```
-  Binds to `127.0.0.1` by default (this machine only). Set
-  `UDMP_DASHBOARD_HOST=0.0.0.0` to make it reachable from elsewhere on
-  your LAN — it has no authentication of its own, so don't expose it
-  beyond a trusted network.
+```bash
+python3 docs/dashboard_server.py
+# open http://127.0.0.1:8765
+```
+
+Binds to `127.0.0.1` by default (this machine only). Set
+`UDMP_DASHBOARD_HOST=0.0.0.0` to make it reachable from elsewhere on your
+LAN — it has no authentication of its own, so don't expose it beyond a
+trusted network (it does validate the `Host` header to block DNS-rebinding
+attacks, but that's not the same thing as auth).
+
+**Static snapshots** are generated on demand, not committed to the repo —
+click **Save snapshot** in the live dashboard's header. It exports
+whatever's currently rendered (same styling, same data, search/filters
+still work) as one self-contained HTML file with no server dependency,
+safe to share, store, or back up as-is. There's no separate generation
+script to keep in sync; the live dashboard *is* the source, and a snapshot
+is just "what it showed, frozen," downloaded straight from the browser.
 
 ## Development
 

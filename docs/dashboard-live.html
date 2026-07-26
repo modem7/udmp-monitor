@@ -251,6 +251,7 @@ a.jump:hover { text-decoration: underline; }
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text">Connecting&hellip;</span>
       <button class="refresh-btn" onclick="load()">Refresh</button>
+      <button class="refresh-btn" id="snapshot-btn" onclick="saveSnapshot()" disabled>Save snapshot</button>
     </div>
 
     <div id="content"></div>
@@ -270,7 +271,8 @@ function toggleTheme() {
 
 function esc(v) {
   if (v === null || v === undefined || v === '') return '&mdash;';
-  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function vlanClass(name) {
   return ['Default', 'IoT', 'Guest', 'Camera', 'VM', 'Wireguard'].includes(name) ? 'vlan-' + name : '';
@@ -290,7 +292,7 @@ function renderHardware(devices) {
     var role = d.model === 'UDM Pro' ? 'Gateway' : ((d.features || []).includes('accessPoint') ? 'Access Point' : 'Switch');
     var chip = d.state === 'ONLINE' ? 'good' : 'critical';
     var uplinkId = d.uplink && d.uplink.deviceId;
-    var uplinkName = uplinkId && devById[uplinkId] ? devById[uplinkId].name : '&mdash;';
+    var uplinkName = uplinkId && devById[uplinkId] ? esc(devById[uplinkId].name) : '&mdash;';
     return '<tr><td><strong>' + esc(d.name) + '</strong></td><td>' + esc(d.model) + '</td><td>' + role +
       '</td><td><span class="chip ' + chip + '">' + esc(d.state) + '</span></td><td class="mono">' + esc(d.ipAddress) +
       '</td><td class="mono dim">' + esc(d.macAddress) + '</td><td class="mono">' + esc(d.firmwareVersion) +
@@ -303,7 +305,7 @@ function renderHardware(devices) {
 function renderNetworks(networks) {
   var rows = networks.filter(function(n) { return n.purpose !== 'wan'; }).map(function(n) {
     var vlanLabel = n.vlan_enabled ? n.vlan : 'native';
-    var dhcp = n.dhcpd_enabled ? (n.dhcpd_start + '&ndash;' + n.dhcpd_stop) : 'disabled';
+    var dhcp = n.dhcpd_enabled ? (esc(n.dhcpd_start) + '&ndash;' + esc(n.dhcpd_stop)) : 'disabled';
     return '<tr><td><span class="vlan-pill ' + vlanClass(n.name) + '">' + esc(n.name) + '</span></td><td>' +
       esc(n.purpose) + '</td><td class="mono">' + esc(vlanLabel) + '</td><td class="mono">' + esc(n.ip_subnet) +
       '</td><td class="mono dim">' + dhcp + '</td><td class="mono dim">' + esc(n.dhcpd_dns_1) + '</td></tr>';
@@ -366,7 +368,7 @@ function renderFirewall(policies, groups) {
       '</td><td><span class="chip ' + (p.action === 'ALLOW' ? 'good' : 'critical') + '">' + esc(p.action) +
       '</span></td><td><span class="chip ' + (p.enabled ? 'good' : 'neutral') + '">' + (p.enabled ? 'on' : 'off') +
       '</span></td><td>' + esc(p.name) + '</td><td class="mono dim">' + esc(p.protocol) + '</td><td class="mono">' +
-      src + '</td><td class="mono">' + dst + '</td></tr>';
+      esc(src) + '</td><td class="mono">' + esc(dst) + '</td></tr>';
   }).join('');
   var groupRows = groups.map(function(g) {
     var members = (g.members || []).join(', ');
@@ -422,6 +424,7 @@ function load() {
       var data = res.data;
       document.getElementById('status-dot').className = 'status-dot live';
       document.getElementById('status-text').textContent = 'Live — updated ' + new Date().toLocaleTimeString();
+      document.getElementById('snapshot-btn').disabled = false;
       document.getElementById('content').innerHTML =
         statsStrip(data) +
         '<section class="doc-section" id="hardware"><h2 class="section-title"><span class="section-num">01</span> Hardware</h2>' + renderHardware(data.devices) + '</section>' +
@@ -434,9 +437,51 @@ function load() {
     .catch(function(err) {
       document.getElementById('status-dot').className = 'status-dot error';
       document.getElementById('status-text').textContent = 'Could not reach controller';
+      document.getElementById('snapshot-btn').disabled = true;
       document.getElementById('content').innerHTML = '<div class="error-box"><strong>Live query failed:</strong> ' + esc(err.message) +
         '<br>Check the UDM is reachable from this VM and .env credentials are valid. For a guaranteed-available reference, see the static dashboard instead.</div>';
     });
+}
+
+function saveSnapshot() {
+  var now = new Date();
+  var stamp = now.toISOString().slice(0, 10);
+  var styleTag = document.querySelector('style').outerHTML;
+  var sidebarHtml = document.querySelector('.sidebar').outerHTML
+    .replace(/Network reference .* live/, 'Network reference · static snapshot');
+  var contentHtml = document.getElementById('content').innerHTML;
+
+  var snapshotDoc = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<title>Middle Earth network — snapshot ' + stamp + '</title>' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' + styleTag + '</head><body>' +
+    '<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>' +
+    '<div class="layout">' + sidebarHtml +
+    '<main class="main"><header class="doc-header" id="overview">' +
+    '<h1 class="doc-title">Middle Earth network</h1>' +
+    '<p class="doc-meta">Static snapshot &middot; captured ' + now.toLocaleString() + '</p></header>' +
+    '<div class="banner"><strong>Static snapshot.</strong> Captured from the live dashboard on ' +
+    esc(now.toLocaleString()) + ' &mdash; safe to share, store, or back up as-is. Won’t reflect ' +
+    'changes made after this point; open the live dashboard for current state.</div>' +
+    contentHtml + '</main></div>' +
+    '<script>' +
+    'function toggleTheme(){var r=document.documentElement;var n=r.getAttribute("data-theme")==="dark"?"light":"dark";' +
+    'r.setAttribute("data-theme",n);localStorage.setItem("udmp-dashboard-theme",n);}' +
+    '(function(){var s=localStorage.getItem("udmp-dashboard-theme");if(s)document.documentElement.setAttribute("data-theme",s);})();' +
+    'function filterRows(input,selector){var q=input.value.toLowerCase();' +
+    'document.querySelectorAll(selector).forEach(function(row){var s=row.getAttribute("data-search")||"";' +
+    'row.style.display=s.indexOf(q)===-1?"none":"";});}' +
+    '</' + 'script>' +
+    '</body></html>';
+
+  var blob = new Blob([snapshotDoc], {type: 'text/html'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'network-dashboard-snapshot-' + stamp + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 load();
 </script>
