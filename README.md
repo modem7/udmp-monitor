@@ -31,10 +31,31 @@ whichever commands you need.
    `UDMP_UI_PASSWORD` for it. This API can change or break without notice
    on a firmware update, unlike the versioned Integration API.
 
-3. Install dependencies:
+3. Install dependencies into a virtual environment (recommended):
    ```bash
-   pip install --break-system-packages -r requirements.txt
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
    ```
+   Then run commands with `.venv/bin/python3` (e.g.
+   `.venv/bin/python3 udmp.py sites`), or `source .venv/bin/activate`
+   first to use plain `python3` for the rest of the session.
+
+   This sidesteps two dead ends people hit here in practice:
+   - **PEP 668 "externally-managed-environment" errors** on Debian/Ubuntu,
+     where a bare `pip install` is blocked by the system Python.
+   - **`pipx install requests python-dotenv`** — `pipx` installs each
+     package into its own *isolated* venv to expose standalone CLI apps;
+     it does not make the package importable by `python3
+     dashboard_server.py` or any other script. `pipx` itself will tell you
+     this ("If you are attempting to install a library, pipx should not
+     be used") but it's an easy thing to reach for anyway, especially
+     right after hitting the externally-managed-environment error above,
+     which suggests it as an alternative.
+
+   If you'd rather not use a venv at all:
+   `pip install --break-system-packages -r requirements.txt` installs
+   straight into the system Python (the flag is only required on
+   externally-managed distros; harmless elsewhere).
 
 4. Credentials live in `.env` (gitignored) or shell env vars
    (`UDMP_HOST`, `UDMP_API_KEY`, `UDMP_UI_USERNAME`, `UDMP_UI_PASSWORD`) —
@@ -71,11 +92,11 @@ gathering steps described at the bottom of that file.
 **`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** is a
 local-only live dashboard that queries the controller fresh on every load.
 It imports `udmp.py`, so it needs the same dependencies and `.env`/env vars
-as the CLI (see Setup above — `pip install -r requirements.txt` first if
-you haven't already):
+as the CLI — see Setup above if you haven't installed `requirements.txt`
+into a venv yet:
 
 ```bash
-python3 docs/dashboard_server.py
+.venv/bin/python3 docs/dashboard_server.py
 # open http://127.0.0.1:8765
 ```
 
@@ -96,8 +117,8 @@ is just "what it showed, frozen," downloaded straight from the browser.
 ## Development
 
 ```bash
-pip install --break-system-packages -r requirements-dev.txt
-ruff check .
-ruff format --check .
-pytest
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/pytest
 ```
