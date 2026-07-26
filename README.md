@@ -14,17 +14,31 @@ See `CLAUDE.md` for the operating rules.
 
 ## Setup
 
-1. On the UDMP: **Settings > Control Plane > Integrations**, enable the
-   Network API, and generate an API key.
+This uses two separate credentials against two separate APIs — set up
+whichever commands you need.
 
-2. Install dependencies:
+1. **Official Integration API** (`sites`/`devices`/`clients`/`radios`):
+   on the UDMP, **Settings > Control Plane > Integrations**, enable the
+   Network API, and generate an API key (`UDMP_API_KEY`).
+
+2. **Legacy session API** (`wlans`/`firewall`): the Integration API
+   doesn't expose WLAN/SSID config or firewall policies at all (confirmed
+   by probing the controller, not assumed). These commands fall back to
+   UniFi's older, undocumented session-cookie API instead, which needs a
+   **dedicated local admin account** — not your personal login. Create one
+   under **Settings > Admins** with the most restrictive role that still
+   has Network-app read access, and set `UDMP_UI_USERNAME`/
+   `UDMP_UI_PASSWORD` for it. This API can change or break without notice
+   on a firmware update, unlike the versioned Integration API.
+
+3. Install dependencies:
    ```bash
    pip install --break-system-packages -r requirements.txt
    ```
 
-3. Credentials live in `.env` (gitignored) or shell env vars
-   (`UDMP_HOST`, `UDMP_API_KEY`) — never pasted into chat or passed as a
-   command-line argument.
+4. Credentials live in `.env` (gitignored) or shell env vars
+   (`UDMP_HOST`, `UDMP_API_KEY`, `UDMP_UI_USERNAME`, `UDMP_UI_PASSWORD`) —
+   never pasted into chat or passed as a command-line argument.
 
    The controller's cert is self-signed by default, so TLS verification is
    off unless `UDMP_VERIFY_SSL=true` is set.
@@ -33,9 +47,13 @@ See `CLAUDE.md` for the operating rules.
 
 ```bash
 python3 udmp.py sites
-python3 udmp.py devices [--site <id-or-name>]
-python3 udmp.py clients [--site <id-or-name>]
-python3 udmp.py radios  [--site <id-or-name>]   # AP channel/width + overlap warnings
+python3 udmp.py devices  [--site <id-or-name>]
+python3 udmp.py clients  [--site <id-or-name>]
+python3 udmp.py radios   [--site <id-or-name>]   # AP channel/width + overlap warnings
+
+# legacy API — needs UDMP_UI_USERNAME/UDMP_UI_PASSWORD
+python3 udmp.py wlans    [--site <name-or-desc>]  # SSID config: security, roaming, isolation, VLAN
+python3 udmp.py firewall [--site <name-or-desc>]  # custom firewall policies, priority order
 ```
 
 If `--site` is omitted, the first site returned by the controller is used.

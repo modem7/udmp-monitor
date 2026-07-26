@@ -36,6 +36,12 @@ def fake_session(routes):
 
 @pytest.fixture(autouse=True)
 def udmp_env(monkeypatch):
+    # Clear first, not just set — otherwise real values from a developer's
+    # local .env (loaded once at module import time) leak into any test
+    # that doesn't explicitly override a given var, which is exactly what
+    # happened with UDMP_UI_USERNAME/PASSWORD before this fixture covered them.
+    for var in ("UDMP_HOST", "UDMP_API_KEY", "UDMP_UI_USERNAME", "UDMP_UI_PASSWORD"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("UDMP_HOST", "udmp.test")
     monkeypatch.setenv("UDMP_API_KEY", "test-key")
 
@@ -45,14 +51,25 @@ def test_base_url_uses_current_env(monkeypatch):
     assert udmp.base_url() == "https://10.0.0.1/proxy/network/integration/v1"
 
 
-def test_require_config_exits_when_missing(monkeypatch):
+def test_require_api_config_exits_when_missing(monkeypatch):
     monkeypatch.delenv("UDMP_HOST", raising=False)
     with pytest.raises(SystemExit):
-        udmp.require_config()
+        udmp.require_api_config()
 
 
-def test_require_config_passes_when_set():
-    udmp.require_config()
+def test_require_api_config_passes_when_set():
+    udmp.require_api_config()
+
+
+def test_require_ui_config_exits_when_missing():
+    with pytest.raises(SystemExit):
+        udmp.require_ui_config()
+
+
+def test_require_ui_config_passes_when_set(monkeypatch):
+    monkeypatch.setenv("UDMP_UI_USERNAME", "placeholder-user")
+    monkeypatch.setenv("UDMP_UI_PASSWORD", "placeholder-pw")
+    udmp.require_ui_config()
 
 
 def test_make_session_sets_api_key_header():
@@ -232,3 +249,181 @@ def test_build_parser_accepts_devices_with_site():
     args = parser.parse_args(["devices", "--site", "Home"])
     assert args.command == "devices"
     assert args.site == "Home"
+
+
+def test_make_legacy_session_logs_in_and_sets_csrf_header(monkeypatch):
+    fake_response = MagicMock()
+    fake_response.headers = {"x-csrf-token": "tok123"}
+    fake_response.raise_for_status = MagicMock()
+
+    class FakeSession:
+        def __init__(self):
+            self.verify = None
+            self.headers = {}
+
+        def post(self, url, json, timeout):
+            self.login_url = url
+            self.login_payload = json
+            return fake_response
+
+    monkeypatch.setenv("UDMP_UI_USERNAME", "placeholder-user")
+    monkeypatch.setenv("UDMP_UI_PASSWORD", "placeholder-pw")
+    monkeypatch.setattr(udmp.requests, "Session", FakeSession)
+
+    session = udmp.make_legacy_session()
+    assert session.headers["x-csrf-token"] == "tok123"
+    assert session.login_url == "https://udmp.test/api/auth/login"
+    assert session.login_payload == {"username": "placeholder-user", "password": "placeholder-pw"}
+
+
+def test_get_legacy_sites_returns_data_list():
+    session = fake_session({"/self/sites": {"data": [{"name": "default", "desc": "Home"}]}})
+    assert udmp.get_legacy_sites(session) == [{"name": "default", "desc": "Home"}]
+
+
+def test_resolve_legacy_site_name_defaults_to_first_site():
+    session = fake_session(
+        {
+            "/self/sites": {
+                "data": [{"name": "default", "desc": "Home"}, {"name": "s2", "desc": "Office"}]
+            }
+        }
+    )
+    assert udmp.resolve_legacy_site_name(session, None) == "default"
+
+
+def test_resolve_legacy_site_name_matches_by_desc():
+    session = fake_session(
+        {
+            "/self/sites": {
+                "data": [{"name": "default", "desc": "Home"}, {"name": "s2", "desc": "Office"}]
+            }
+        }
+    )
+    assert udmp.resolve_legacy_site_name(session, "Office") == "s2"
+
+
+def test_resolve_legacy_site_name_unknown_exits():
+    session = fake_session({"/self/sites": {"data": [{"name": "default", "desc": "Home"}]}})
+    with pytest.raises(SystemExit):
+        udmp.resolve_legacy_site_name(session, "nope")
+
+
+def test_get_wlans_returns_data_list():
+    session = fake_session({"/s/default/rest/wlanconf": {"data": [{"name": "MySSID"}]}})
+    assert udmp.get_wlans(session, "default") == [{"name": "MySSID"}]
+
+
+def test_get_legacy_networks_returns_data_list():
+    session = fake_session({"/s/default/rest/networkconf": {"data": [{"name": "Default"}]}})
+    assert udmp.get_legacy_networks(session, "default") == [{"name": "Default"}]
+
+
+def test_summarize_wlans_resolves_vlan_and_selects_fields():
+    wlans = [
+        {
+            "name": "Mordor-Guest",
+            "enabled": True,
+            "is_guest": False,
+            "security": "wpapsk",
+            "networkconf_id": "net1",
+            "some_irrelevant_field": "xyz",
+        }
+    ]
+    networks = [{"_id": "net1", "vlan": 20, "name": "Guest"}]
+    summary = udmp.summarize_wlans(wlans, networks)
+    assert len(summary) == 1
+    row = summary[0]
+    assert row["name"] == "Mordor-Guest"
+    assert row["is_guest"] is False
+    assert row["vlan_id"] == 20
+    assert row["network_name"] == "Guest"
+    assert "some_irrelevant_field" not in row
+
+
+def test_summarize_wlans_handles_missing_network():
+    wlans = [{"name": "Orphan", "networkconf_id": "missing"}]
+    summary = udmp.summarize_wlans(wlans, [])
+    assert summary[0]["vlan_id"] is None
+    assert summary[0]["network_name"] is None
+
+
+def test_cmd_wlans_prints_json(capsys):
+    session = fake_session(
+        {
+            "/self/sites": {"data": [{"name": "default", "desc": "Home"}]},
+            "/s/default/rest/wlanconf": {
+                "data": [{"name": "Mordor", "networkconf_id": "net1", "is_guest": False}]
+            },
+            "/s/default/rest/networkconf": {
+                "data": [{"_id": "net1", "vlan": 1, "name": "Default"}]
+            },
+        }
+    )
+    args = MagicMock(site=None)
+    udmp.cmd_wlans(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out[0]["name"] == "Mordor"
+    assert out[0]["vlan_id"] == 1
+
+
+def test_get_firewall_policies_returns_raw_list():
+    session = fake_session({"/site/default/firewall-policies": [{"name": "Allow X"}]})
+    assert udmp.get_firewall_policies(session, "default") == [{"name": "Allow X"}]
+
+
+def test_get_firewall_groups_returns_data_list():
+    session = fake_session({"/s/default/rest/firewallgroup": {"data": [{"name": "Pihole"}]}})
+    assert udmp.get_firewall_groups(session, "default") == [{"name": "Pihole"}]
+
+
+def test_summarize_firewall_policies_filters_predefined_and_sorts_by_index():
+    policies = [
+        {"index": 10001, "name": "Custom B", "predefined": False, "action": "ALLOW"},
+        {"index": 2147483647, "name": "Allow All Traffic", "predefined": True, "action": "ALLOW"},
+        {"index": 10000, "name": "Custom A", "predefined": False, "action": "BLOCK"},
+    ]
+    summary = udmp.summarize_firewall_policies(policies, [])
+    assert [p["name"] for p in summary] == ["Custom A", "Custom B"]
+
+
+def test_summarize_firewall_policies_resolves_group_names():
+    policies = [
+        {
+            "index": 10003,
+            "name": "Allow Guest network to Pihole",
+            "predefined": False,
+            "action": "ALLOW",
+            "protocol": "all",
+            "enabled": True,
+            "source": {"zone_id": "zoneA"},
+            "destination": {"zone_id": "zoneB", "ip_group_id": "grp1"},
+        }
+    ]
+    groups = [{"_id": "grp1", "name": "Pihole"}]
+    summary = udmp.summarize_firewall_policies(policies, groups)
+    assert summary[0]["destination"] == {"zone_id": "zoneB", "group": "Pihole"}
+    assert summary[0]["source"] == {"zone_id": "zoneA"}
+
+
+def test_cmd_firewall_prints_json(capsys):
+    session = fake_session(
+        {
+            "/self/sites": {"data": [{"name": "default", "desc": "Home"}]},
+            "/site/default/firewall-policies": [
+                {
+                    "index": 10000,
+                    "name": "Custom rule",
+                    "predefined": False,
+                    "action": "ALLOW",
+                    "source": {"zone_id": "z1"},
+                    "destination": {"zone_id": "z2"},
+                }
+            ],
+            "/s/default/rest/firewallgroup": {"data": []},
+        }
+    )
+    args = MagicMock(site=None)
+    udmp.cmd_firewall(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out[0]["name"] == "Custom rule"
