@@ -406,6 +406,41 @@ def test_summarize_firewall_policies_resolves_group_names():
     assert summary[0]["source"] == {"zone_id": "zoneA"}
 
 
+def test_summarize_firewall_policies_dedupes_repeated_zone_pairs():
+    # "any network" rules get stored as one policy doc per concrete zone
+    # pair — same index/name/action, different zone_id/destination.
+    policies = [
+        {
+            "index": 10010,
+            "name": "Allow Guest to Plex",
+            "predefined": False,
+            "action": "ALLOW",
+            "source": {"zone_id": "zoneA"},
+            "destination": {"zone_id": "zoneB", "ip_group_id": "grp1"},
+        },
+        {
+            "index": 10010,
+            "name": "Allow Guest to Plex",
+            "predefined": False,
+            "action": "ALLOW",
+            "source": {"zone_id": "zoneA"},
+            "destination": {"zone_id": "zoneC", "ip_group_id": "grp1"},
+        },
+        {
+            "index": 10010,
+            "name": "Allow Guest to Plex",
+            "predefined": False,
+            "action": "ALLOW",
+            "source": {"zone_id": "zoneA"},
+            "destination": {"zone_id": "zoneD", "ip_group_id": "grp1"},
+        },
+    ]
+    groups = [{"_id": "grp1", "name": "HDA Server"}]
+    summary = udmp.summarize_firewall_policies(policies, groups)
+    assert len(summary) == 1
+    assert summary[0]["destination"]["group"] == "HDA Server"
+
+
 def test_cmd_firewall_prints_json(capsys):
     session = fake_session(
         {
@@ -427,3 +462,144 @@ def test_cmd_firewall_prints_json(capsys):
     udmp.cmd_firewall(args, session)
     out = json.loads(capsys.readouterr().out)
     assert out[0]["name"] == "Custom rule"
+
+
+def test_summarize_networks_selects_fields():
+    networks = [
+        {
+            "name": "IoT",
+            "purpose": "corporate",
+            "vlan": 30,
+            "ip_subnet": "192.168.30.1/24",
+            "irrelevant_field": "x",
+        }
+    ]
+    summary = udmp.summarize_networks(networks)
+    assert summary[0]["name"] == "IoT"
+    assert summary[0]["vlan"] == 30
+    assert "irrelevant_field" not in summary[0]
+
+
+def test_get_legacy_devices_returns_data_list():
+    session = fake_session({"/s/default/stat/device": {"data": [{"mac": "aa:bb"}]}})
+    assert udmp.get_legacy_devices(session, "default") == [{"mac": "aa:bb"}]
+
+
+def test_summarize_switch_ports_skips_devices_without_overrides():
+    devices = [
+        {"name": "Gimli", "port_overrides": [{"port_idx": 2, "native_networkconf_id": "net1"}]},
+        {"name": "NoOverrides"},
+    ]
+    networks = [{"_id": "net1", "name": "Default"}]
+    summary = udmp.summarize_switch_ports(devices, networks)
+    assert len(summary) == 1
+    assert summary[0]["device"] == "Gimli"
+    assert summary[0]["ports"][0]["native_network"] == "Default"
+
+
+def test_summarize_switch_ports_sorts_by_port_idx():
+    devices = [
+        {
+            "name": "Gimli",
+            "port_overrides": [
+                {"port_idx": 3, "native_networkconf_id": "net1"},
+                {"port_idx": 1, "native_networkconf_id": "net1"},
+            ],
+        }
+    ]
+    summary = udmp.summarize_switch_ports(devices, [{"_id": "net1", "name": "Default"}])
+    assert [p["port_idx"] for p in summary[0]["ports"]] == [1, 3]
+
+
+def test_get_known_clients_returns_data_list():
+    session = fake_session({"/s/default/rest/user": {"data": [{"mac": "aa:bb"}]}})
+    assert udmp.get_known_clients(session, "default") == [{"mac": "aa:bb"}]
+
+
+def test_summarize_known_clients_filters_to_fixed_ip_by_default():
+    clients = [
+        {"name": "Server", "mac": "aa", "use_fixedip": True, "fixed_ip": "192.168.0.5"},
+        {"name": "Phone", "mac": "bb", "use_fixedip": False, "last_ip": "192.168.0.99"},
+    ]
+    summary = udmp.summarize_known_clients(clients, [])
+    assert len(summary) == 1
+    assert summary[0]["name"] == "Server"
+    assert summary[0]["fixed_ip"] is True
+
+
+def test_summarize_known_clients_all_includes_dynamic():
+    clients = [
+        {"name": "Server", "mac": "aa", "use_fixedip": True, "fixed_ip": "192.168.0.5"},
+        {"name": "Phone", "mac": "bb", "use_fixedip": False, "last_ip": "192.168.0.99"},
+    ]
+    summary = udmp.summarize_known_clients(clients, [], fixed_ip_only=False)
+    assert len(summary) == 2
+
+
+def test_summarize_known_clients_resolves_network_and_protect_model():
+    clients = [
+        {
+            "name": "Sauron",
+            "mac": "cc",
+            "use_fixedip": True,
+            "fixed_ip": "192.168.0.207",
+            "network_id": "net1",
+            "unifi_device_info_from_ucore": {"computed_model": "UNVR"},
+        }
+    ]
+    networks = [{"_id": "net1", "name": "Default"}]
+    summary = udmp.summarize_known_clients(clients, networks)
+    assert summary[0]["network"] == "Default"
+    assert summary[0]["product_model"] == "UNVR"
+
+
+def test_cmd_networks_prints_json(capsys):
+    session = fake_session(
+        {
+            "/self/sites": {"data": [{"name": "default", "desc": "Home"}]},
+            "/s/default/rest/networkconf": {"data": [{"name": "IoT", "vlan": 30}]},
+        }
+    )
+    args = MagicMock(site=None)
+    udmp.cmd_networks(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out[0]["name"] == "IoT"
+
+
+def test_cmd_ports_prints_json(capsys):
+    session = fake_session(
+        {
+            "/self/sites": {"data": [{"name": "default", "desc": "Home"}]},
+            "/s/default/stat/device": {
+                "data": [
+                    {
+                        "name": "Gimli",
+                        "port_overrides": [{"port_idx": 1, "native_networkconf_id": "net1"}],
+                    }
+                ]
+            },
+            "/s/default/rest/networkconf": {"data": [{"_id": "net1", "name": "Default"}]},
+        }
+    )
+    args = MagicMock(site=None)
+    udmp.cmd_ports(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out[0]["device"] == "Gimli"
+
+
+def test_cmd_known_clients_prints_json(capsys):
+    session = fake_session(
+        {
+            "/self/sites": {"data": [{"name": "default", "desc": "Home"}]},
+            "/s/default/rest/user": {
+                "data": [
+                    {"name": "Server", "mac": "aa", "use_fixedip": True, "fixed_ip": "10.0.0.1"}
+                ]
+            },
+            "/s/default/rest/networkconf": {"data": []},
+        }
+    )
+    args = MagicMock(site=None, all=False)
+    udmp.cmd_known_clients(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out[0]["name"] == "Server"

@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 load_dotenv()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Commands routed through the legacy session API (UDMP_UI_USERNAME/PASSWORD)
+# rather than the Integration API (UDMP_API_KEY).
+LEGACY_API_COMMANDS = {"wlans", "firewall", "networks", "ports", "known-clients"}
+
 
 def get_host():
     return os.environ.get("UDMP_HOST")
@@ -113,6 +117,94 @@ def get_legacy_networks(session, site_name):
     return r.json().get("data", [])
 
 
+NETWORK_SUMMARY_FIELDS = [
+    "name",
+    "purpose",
+    "enabled",
+    "vlan",
+    "vlan_enabled",
+    "ip_subnet",
+    "dhcpd_enabled",
+    "dhcpd_start",
+    "dhcpd_stop",
+    "dhcpd_dns_1",
+    "dhcpd_dns_2",
+    "domain_name",
+    "wan_type",
+    "wan_username",
+    "firewall_zone_id",
+]
+
+
+def summarize_networks(networks):
+    return [{f: n.get(f) for f in NETWORK_SUMMARY_FIELDS} for n in networks]
+
+
+def get_legacy_devices(session, site_name):
+    """Legacy stat/device — the only place port_overrides (per-port name and
+    native VLAN assignment) lives; the Integration API's device detail only
+    has live port state/speed/PoE, not the configured VLAN intent."""
+    r = session.get(f"{legacy_base_url()}/s/{site_name}/stat/device", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def summarize_switch_ports(legacy_devices, networks):
+    net_by_id = {n["_id"]: n for n in networks}
+    switches = []
+    for d in legacy_devices:
+        overrides = d.get("port_overrides")
+        if not overrides:
+            continue
+        ports = []
+        for p in sorted(overrides, key=lambda x: x.get("port_idx", 0)):
+            net = net_by_id.get(p.get("native_networkconf_id"), {})
+            ports.append(
+                {
+                    "port_idx": p.get("port_idx"),
+                    "name": p.get("name"),
+                    "native_network": net.get("name"),
+                    "poe_mode": p.get("poe_mode"),
+                    "forward": p.get("forward"),
+                    "tagged_vlan_mgmt": p.get("tagged_vlan_mgmt"),
+                }
+            )
+        switches.append({"device": d.get("name", d.get("mac")), "ports": ports})
+    return switches
+
+
+def get_known_clients(session, site_name):
+    """All clients the controller has ever seen (incl. offline), not just
+    currently-connected ones — the Integration API's `clients` only covers
+    live connections. This is where static/fixed IP reservations live."""
+    r = session.get(f"{legacy_base_url()}/s/{site_name}/rest/user", timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def summarize_known_clients(clients, networks, fixed_ip_only=True):
+    net_by_id = {n["_id"]: n for n in networks}
+    rows = []
+    for c in clients:
+        if fixed_ip_only and not c.get("use_fixedip"):
+            continue
+        protect_info = c.get("unifi_device_info_from_ucore", {})
+        rows.append(
+            {
+                "name": c.get("name") or c.get("hostname"),
+                "mac": c.get("mac"),
+                "ip": c.get("fixed_ip") or c.get("last_ip"),
+                "fixed_ip": bool(c.get("use_fixedip")),
+                "network": net_by_id.get(c.get("network_id"), {}).get("name")
+                or c.get("last_connection_network_name"),
+                "product_model": protect_info.get("computed_model") or c.get("product_model"),
+                "is_wired": c.get("is_wired"),
+            }
+        )
+    rows.sort(key=lambda r: r.get("ip") or "")
+    return rows
+
+
 # Fields worth surfacing for a WiFi config review — security posture and
 # roaming/isolation behavior, not every low-level radio knob wlanconf has.
 WLAN_SUMMARY_FIELDS = [
@@ -175,6 +267,14 @@ def summarize_firewall_policies(policies, groups):
     Zone names aren't resolvable — the controller has no endpoint exposing
     them (confirmed 404) — so `zone_id` is passed through raw rather than
     guessed at.
+
+    When a rule targets "any network" on one side, the API stores one
+    policy document per concrete zone pair rather than a single rule —
+    the same name/action/index repeated 3-4x with only the zone_id on one
+    side differing. Deduplicated here by (index, name, action): safe
+    because the resolved `source`/`destination` group name (when present)
+    doesn't depend on which zone pair produced it, so nothing observable
+    is lost by keeping only the first occurrence.
     """
     group_by_id = {g["_id"]: g.get("name") for g in groups}
 
@@ -186,18 +286,25 @@ def summarize_firewall_policies(policies, groups):
 
     custom = [p for p in policies if not p.get("predefined")]
     custom.sort(key=lambda p: p.get("index", 0))
-    return [
-        {
-            "index": p.get("index"),
-            "name": p.get("name"),
-            "action": p.get("action"),
-            "enabled": p.get("enabled"),
-            "protocol": p.get("protocol"),
-            "source": resolve_endpoint(p.get("source", {})),
-            "destination": resolve_endpoint(p.get("destination", {})),
-        }
-        for p in custom
-    ]
+    seen = set()
+    result = []
+    for p in custom:
+        key = (p.get("index"), p.get("name"), p.get("action"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(
+            {
+                "index": p.get("index"),
+                "name": p.get("name"),
+                "action": p.get("action"),
+                "enabled": p.get("enabled"),
+                "protocol": p.get("protocol"),
+                "source": resolve_endpoint(p.get("source", {})),
+                "destination": resolve_endpoint(p.get("destination", {})),
+            }
+        )
+    return result
 
 
 def get_sites(session):
@@ -327,6 +434,25 @@ def cmd_firewall(args, session):
     emit(summarize_firewall_policies(policies, groups))
 
 
+def cmd_networks(args, session):
+    site_name = resolve_legacy_site_name(session, args.site)
+    emit(summarize_networks(get_legacy_networks(session, site_name)))
+
+
+def cmd_ports(args, session):
+    site_name = resolve_legacy_site_name(session, args.site)
+    legacy_devices = get_legacy_devices(session, site_name)
+    networks = get_legacy_networks(session, site_name)
+    emit(summarize_switch_ports(legacy_devices, networks))
+
+
+def cmd_known_clients(args, session):
+    site_name = resolve_legacy_site_name(session, args.site)
+    clients = get_known_clients(session, site_name)
+    networks = get_legacy_networks(session, site_name)
+    emit(summarize_known_clients(clients, networks, fixed_ip_only=not args.all))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -367,6 +493,40 @@ def build_parser():
     )
     p_firewall.add_argument("--site", help="Site short name or description (default: first site)")
 
+    p_networks = sub.add_parser(
+        "networks",
+        help=(
+            "List VLANs/networks (subnet, DHCP, WAN config) via the legacy session "
+            "API — requires UDMP_UI_USERNAME/UDMP_UI_PASSWORD"
+        ),
+    )
+    p_networks.add_argument("--site", help="Site short name or description (default: first site)")
+
+    p_ports = sub.add_parser(
+        "ports",
+        help=(
+            "List per-switch port name/native-VLAN/PoE assignments via the legacy "
+            "session API — requires UDMP_UI_USERNAME/UDMP_UI_PASSWORD"
+        ),
+    )
+    p_ports.add_argument("--site", help="Site short name or description (default: first site)")
+
+    p_known_clients = sub.add_parser(
+        "known-clients",
+        help=(
+            "List all clients the controller has ever seen, not just currently "
+            "connected ones — requires UDMP_UI_USERNAME/UDMP_UI_PASSWORD"
+        ),
+    )
+    p_known_clients.add_argument(
+        "--site", help="Site short name or description (default: first site)"
+    )
+    p_known_clients.add_argument(
+        "--all",
+        action="store_true",
+        help="Include clients without a static/fixed IP reservation (default: fixed-IP only)",
+    )
+
     return parser
 
 
@@ -380,9 +540,12 @@ def main():
         "radios": cmd_radios,
         "wlans": cmd_wlans,
         "firewall": cmd_firewall,
+        "networks": cmd_networks,
+        "ports": cmd_ports,
+        "known-clients": cmd_known_clients,
     }
     try:
-        if args.command in ("wlans", "firewall"):
+        if args.command in LEGACY_API_COMMANDS:
             require_ui_config()
             session = make_legacy_session()
         else:

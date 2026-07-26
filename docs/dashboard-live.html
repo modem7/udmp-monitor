@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Middle Earth network — live dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg: #0a0e13;
+  --surface: #121820;
+  --surface-2: #1a222b;
+  --border: #232d38;
+  --text: #e7edf3;
+  --text-dim: #8a97a5;
+  --text-faint: #566270;
+  --accent: #45d1c4;
+  --accent-dim: #2a8f86;
+  --good: #4ade80;
+  --good-bg: #17301f;
+  --warning: #f0a83c;
+  --warning-bg: #332309;
+  --critical: #f0605a;
+  --critical-bg: #351515;
+  --vlan-default: #6ea8fe;
+  --vlan-iot: #e8b339;
+  --vlan-guest: #b391f5;
+  --vlan-camera: #f28fb0;
+  --vlan-vm: #6bcf8f;
+  --vlan-wan: #9aa5b1;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
+  --radius: 6px;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef1f4;
+  --border: #dde3e9;
+  --text: #131a21;
+  --text-dim: #5c6b78;
+  --text-faint: #8b98a5;
+  --accent: #0f8f83;
+  --accent-dim: #0c6e64;
+  --good: #16a34a;
+  --good-bg: #e3f6ea;
+  --warning: #b7791f;
+  --warning-bg: #fbf1de;
+  --critical: #d1453b;
+  --critical-bg: #fbe6e5;
+}
+
+/* Dark is the unconditional default — no prefers-color-scheme fallback.
+   Light mode is reachable only via the explicit toggle (data-theme). */
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px; line-height: 1.6;
+}
+::selection { background: var(--accent); color: var(--bg); }
+
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 240px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-brand {
+  font-weight: 800; font-size: 15px; letter-spacing: -0.01em;
+  margin-bottom: 2px;
+}
+.sidebar-sub {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 20px;
+}
+.sidebar nav { display: flex; flex-direction: column; gap: 1px; }
+.sidebar nav a {
+  color: var(--text-dim); text-decoration: none;
+  font-size: 13px; padding: 6px 8px; border-radius: var(--radius);
+}
+.sidebar nav a:hover { background: var(--surface-2); color: var(--text); }
+.sidebar nav a.section-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-faint); margin-top: 14px; padding: 0 8px 4px;
+  font-weight: 700; pointer-events: none;
+}
+
+.main { flex: 1; min-width: 0; padding: 32px 40px 80px; max-width: 1180px; }
+
+.doc-header { margin-bottom: 28px; }
+.doc-title { font-size: 26px; font-weight: 800; letter-spacing: -0.015em; text-wrap: balance; margin: 0 0 6px; }
+.doc-meta { color: var(--text-dim); font-size: 13.5px; }
+.doc-meta code { font-family: var(--mono); }
+
+.banner {
+  border: 1px solid var(--border); background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 16px; margin-bottom: 28px;
+  font-size: 13.5px; color: var(--text-dim);
+}
+.banner strong { color: var(--text); }
+
+.stats-strip {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px; margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 4px; }
+.stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-value.good { color: var(--good); }
+.stat-value.warning { color: var(--warning); }
+.stat-value.critical { color: var(--critical); }
+
+section.doc-section { margin-bottom: 44px; scroll-margin-top: 20px; }
+.section-title {
+  font-size: 19px; font-weight: 800; letter-spacing: -0.01em;
+  margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px;
+}
+.section-num { font-family: var(--mono); font-size: 13px; color: var(--text-faint); font-weight: 600; }
+.section-intro { color: var(--text-dim); font-size: 13.5px; margin: 0 0 16px; max-width: 68ch; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.card-title { font-size: 13px; font-weight: 700; margin: 0 0 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); font-weight: 700;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); position: sticky; top: 0;
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  color: var(--text); vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface-2); }
+td.mono, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+td.dim { color: var(--text-dim); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 100px;
+  white-space: nowrap; line-height: 1.6;
+}
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.good { background: var(--good-bg); color: var(--good); }
+.chip.critical { background: var(--critical-bg); color: var(--critical); }
+.chip.warning { background: var(--warning-bg); color: var(--warning); }
+.chip.neutral { background: var(--surface-2); color: var(--text-dim); }
+.chip.neutral::before { display: none; }
+
+.vlan-pill {
+  display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 100px; font-family: var(--mono);
+}
+.vlan-Default { background: color-mix(in srgb, var(--vlan-default) 18%, transparent); color: var(--vlan-default); }
+.vlan-IoT { background: color-mix(in srgb, var(--vlan-iot) 18%, transparent); color: var(--vlan-iot); }
+.vlan-Guest { background: color-mix(in srgb, var(--vlan-guest) 18%, transparent); color: var(--vlan-guest); }
+.vlan-Camera { background: color-mix(in srgb, var(--vlan-camera) 18%, transparent); color: var(--vlan-camera); }
+.vlan-VM { background: color-mix(in srgb, var(--vlan-vm) 18%, transparent); color: var(--vlan-vm); }
+.vlan-WAN, .vlan-Wireguard { background: color-mix(in srgb, var(--vlan-wan) 18%, transparent); color: var(--vlan-wan); }
+
+.finding {
+  border: 1px solid var(--warning); background: var(--warning-bg);
+  border-radius: 8px; padding: 14px 16px; margin: 12px 0;
+  font-size: 13.5px;
+}
+.finding-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 800;
+  color: var(--warning); margin-bottom: 6px;
+}
+
+.search-box {
+  width: 100%; max-width: 320px; padding: 7px 10px; margin-bottom: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font-family: var(--sans); font-size: 13px;
+}
+.search-box:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+.theme-toggle {
+  position: fixed; top: 16px; right: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 100px;
+  padding: 6px 12px; font-size: 12px; color: var(--text-dim); cursor: pointer;
+  font-family: var(--sans);
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--text-faint); }
+
+a.jump { color: var(--accent); text-decoration: none; }
+a.jump:hover { text-decoration: underline; }
+
+.footnote { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
+
+@media (max-width: 800px) {
+  .sidebar { display: none; }
+  .main { padding: 24px 20px 60px; }
+}
+
+.status-strip { display:flex; align-items:center; gap:8px; margin-bottom:20px; font-size:13px; color: var(--text-dim); }
+.status-dot { width:8px; height:8px; border-radius:50%; background: var(--text-faint); }
+.status-dot.live { background: var(--good); }
+.status-dot.error { background: var(--critical); }
+.spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border); border-top-color: var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-box { border:1px solid var(--critical); background: var(--critical-bg); color: var(--critical); border-radius:8px; padding:16px; font-size:13.5px; }
+.refresh-btn { background: var(--surface); border:1px solid var(--border); border-radius:100px; padding:4px 12px; font-size:12px; color: var(--text-dim); cursor:pointer; font-family: var(--sans); }
+.refresh-btn:hover { color: var(--text); border-color: var(--text-faint); }
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-brand">Middle Earth</div>
+    <div class="sidebar-sub">Network reference &middot; live</div>
+    <nav>
+      <a class="section-label">Contents</a>
+      <a href="#overview">Overview</a>
+      <a href="#hardware">Hardware</a>
+      <a href="#networks">Networks / VLANs</a>
+      <a href="#ports">Switch ports</a>
+      <a href="#wireless">Wireless</a>
+      <a href="#firewall">Firewall</a>
+      <a href="#clients">Clients</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="doc-header" id="overview">
+      <h1 class="doc-title">Middle Earth network</h1>
+      <p class="doc-meta">Live dashboard &mdash; queries the controller fresh on every load</p>
+    </header>
+
+    <div class="status-strip">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Connecting&hellip;</span>
+      <button class="refresh-btn" onclick="load()">Refresh</button>
+    </div>
+
+    <div id="content"></div>
+  </main>
+</div>
+<script>
+function toggleTheme() {
+  var root = document.documentElement;
+  var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  root.setAttribute('data-theme', next);
+  localStorage.setItem('udmp-dashboard-theme', next);
+}
+(function() {
+  var saved = localStorage.getItem('udmp-dashboard-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+
+function esc(v) {
+  if (v === null || v === undefined || v === '') return '&mdash;';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function vlanClass(name) {
+  return ['Default', 'IoT', 'Guest', 'Camera', 'VM', 'Wireguard'].includes(name) ? 'vlan-' + name : '';
+}
+function filterRows(input, selector) {
+  var q = input.value.toLowerCase();
+  document.querySelectorAll(selector).forEach(function(row) {
+    var s = row.getAttribute('data-search') || '';
+    row.style.display = s.indexOf(q) === -1 ? 'none' : '';
+  });
+}
+
+function renderHardware(devices) {
+  var devById = {};
+  devices.forEach(function(d) { devById[d.id] = d; });
+  var rows = devices.map(function(d) {
+    var role = d.model === 'UDM Pro' ? 'Gateway' : ((d.features || []).includes('accessPoint') ? 'Access Point' : 'Switch');
+    var chip = d.state === 'ONLINE' ? 'good' : 'critical';
+    var uplinkId = d.uplink && d.uplink.deviceId;
+    var uplinkName = uplinkId && devById[uplinkId] ? devById[uplinkId].name : '&mdash;';
+    return '<tr><td><strong>' + esc(d.name) + '</strong></td><td>' + esc(d.model) + '</td><td>' + role +
+      '</td><td><span class="chip ' + chip + '">' + esc(d.state) + '</span></td><td class="mono">' + esc(d.ipAddress) +
+      '</td><td class="mono dim">' + esc(d.macAddress) + '</td><td class="mono">' + esc(d.firmwareVersion) +
+      '</td><td>' + uplinkName + '</td></tr>';
+  }).join('');
+  return '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Model</th><th>Role</th><th>State</th>' +
+    '<th>IP</th><th>MAC</th><th>Firmware</th><th>Uplinks to</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function renderNetworks(networks) {
+  var rows = networks.filter(function(n) { return n.purpose !== 'wan'; }).map(function(n) {
+    var vlanLabel = n.vlan_enabled ? n.vlan : 'native';
+    var dhcp = n.dhcpd_enabled ? (n.dhcpd_start + '&ndash;' + n.dhcpd_stop) : 'disabled';
+    return '<tr><td><span class="vlan-pill ' + vlanClass(n.name) + '">' + esc(n.name) + '</span></td><td>' +
+      esc(n.purpose) + '</td><td class="mono">' + esc(vlanLabel) + '</td><td class="mono">' + esc(n.ip_subnet) +
+      '</td><td class="mono dim">' + dhcp + '</td><td class="mono dim">' + esc(n.dhcpd_dns_1) + '</td></tr>';
+  }).join('');
+  var wanCards = networks.filter(function(n) { return n.purpose === 'wan'; }).map(function(n) {
+    return '<div class="card"><p class="card-title">' + esc(n.name) + '</p><table>' +
+      '<tr><td class="dim">Type</td><td class="mono">' + esc(n.wan_type) + '</td></tr>' +
+      (n.wan_username ? '<tr><td class="dim">Username</td><td class="mono">' + esc(n.wan_username) + '</td></tr>' : '') +
+      '</table></div>';
+  }).join('');
+  return '<div class="grid-2" style="margin-bottom:16px">' + wanCards + '</div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Network</th><th>Purpose</th><th>VLAN</th><th>Subnet</th>' +
+    '<th>DHCP range</th><th>DNS</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function renderPorts(ports) {
+  return ports.map(function(sw) {
+    var rows = sw.ports.map(function(p) {
+      var isolated = p.tagged_vlan_mgmt === 'block_all';
+      return '<tr><td class="mono">' + p.port_idx + '</td><td>' + esc(p.name) + '</td><td><span class="vlan-pill ' +
+        vlanClass(p.native_network) + '">' + esc(p.native_network) + '</span></td><td>' + esc(p.poe_mode) +
+        '</td><td>' + (isolated ? '<span class="chip warning">isolated</span>' : esc(p.forward)) + '</td></tr>';
+    }).join('');
+    return '<div class="card"><p class="card-title">' + esc(sw.device) + '</p><div class="table-wrap"><table>' +
+      '<thead><tr><th>Port</th><th>Name</th><th>Network</th><th>PoE</th><th>Mode</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div></div>';
+  }).join('');
+}
+
+function renderWireless(radios, radioWarnings, wlans) {
+  var radioRows = radios.map(function(r) {
+    return '<tr><td><strong>' + esc(r.device) + '</strong></td><td class="mono">' + r.frequencyGHz + 'GHz</td>' +
+      '<td class="mono">ch' + r.channel + '</td><td class="mono">' + r.channelWidthMHz + 'MHz</td></tr>';
+  }).join('');
+  var warnBlock = radioWarnings.length ? radioWarnings.map(function(w) {
+    return '<div class="finding"><div class="finding-label">Channel overlap</div>' + esc(w) + '</div>';
+  }).join('') : '';
+  var wlanRows = wlans.map(function(w) {
+    var vlanLabel = w.vlan_id ? w.vlan_id : 'native';
+    return '<tr><td><strong>' + esc(w.name) + '</strong></td><td><span class="vlan-pill ' + vlanClass(w.network_name) +
+      '">' + esc(w.network_name) + ' (' + vlanLabel + ')</span></td><td class="mono">' + esc(w.wpa_mode) +
+      (w.wpa3_transition ? ' / transition' : '') + '</td><td>' + esc(w.pmf_mode) + '</td><td>' +
+      (w.fast_roaming_enabled ? '<span class="chip good">on</span>' : '<span class="chip neutral">off</span>') +
+      '</td><td>' + (w.l2_isolation ? '<span class="chip good">on</span>' : '<span class="chip warning">off</span>') +
+      '</td><td>' + (w.is_guest ? '<span class="chip good">yes</span>' : '<span class="chip warning">no</span>') +
+      '</td><td>' + (w.hide_ssid ? 'yes' : 'no') + '</td></tr>';
+  }).join('');
+  return '<div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>AP</th><th>Band</th><th>Channel</th>' +
+    '<th>Width</th></tr></thead><tbody>' + radioRows + '</tbody></table></div>' + warnBlock +
+    '<div class="table-wrap"><table><thead><tr><th>SSID</th><th>Network</th><th>Security</th><th>PMF</th>' +
+    '<th>Fast roaming</th><th>Isolation</th><th>Guest flag</th><th>Hidden</th></tr></thead><tbody>' + wlanRows + '</tbody></table></div>';
+}
+
+function renderFirewall(policies, groups) {
+  var policyRows = policies.map(function(p) {
+    var src = p.source.group || ('zone &hellip;' + p.source.zone_id.slice(-4));
+    var dst = p.destination.group || ('zone &hellip;' + p.destination.zone_id.slice(-4));
+    var search = (p.name + ' ' + src + ' ' + dst + ' ' + p.action).toLowerCase();
+    return '<tr class="fw-policy-row" data-search="' + esc(search) + '"><td class="mono dim">' + p.index +
+      '</td><td><span class="chip ' + (p.action === 'ALLOW' ? 'good' : 'critical') + '">' + esc(p.action) +
+      '</span></td><td><span class="chip ' + (p.enabled ? 'good' : 'neutral') + '">' + (p.enabled ? 'on' : 'off') +
+      '</span></td><td>' + esc(p.name) + '</td><td class="mono dim">' + esc(p.protocol) + '</td><td class="mono">' +
+      src + '</td><td class="mono">' + dst + '</td></tr>';
+  }).join('');
+  var groupRows = groups.map(function(g) {
+    var members = (g.members || []).join(', ');
+    var search = (g.name + ' ' + members).toLowerCase();
+    return '<tr class="fw-group-row" data-search="' + esc(search) + '"><td><strong>' + esc(g.name) +
+      '</strong></td><td><span class="chip neutral">' + esc(g.type) + '</span></td><td class="mono dim">' + esc(members) + '</td></tr>';
+  }).join('');
+  return '<input class="search-box" placeholder="Filter rules&hellip;" oninput="filterRows(this, \'.fw-policy-row\')">' +
+    '<div class="table-wrap"><table><thead><tr><th>Idx</th><th>Action</th><th>On</th><th>Rule</th><th>Proto</th>' +
+    '<th>Source</th><th>Destination</th></tr></thead><tbody>' + policyRows + '</tbody></table></div>' +
+    '<p class="card-title" style="margin-top:24px">Firewall groups</p>' +
+    '<input class="search-box" placeholder="Filter groups&hellip;" oninput="filterRows(this, \'.fw-group-row\')">' +
+    '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Members</th></tr></thead><tbody>' + groupRows + '</tbody></table></div>';
+}
+
+function renderClients(knownClients, liveClients) {
+  var rows = knownClients.map(function(c) {
+    var search = (c.name + ' ' + c.mac + ' ' + c.network + ' ' + (c.product_model || '')).toLowerCase();
+    return '<tr class="client-row" data-search="' + esc(search) + '"><td class="mono">' + esc(c.ip) +
+      '</td><td class="mono dim">' + esc(c.mac) + '</td><td><strong>' + esc(c.name) + '</strong></td><td>' +
+      '<span class="vlan-pill ' + vlanClass(c.network) + '">' + esc(c.network) + '</span></td><td class="dim">' +
+      esc(c.product_model) + '</td></tr>';
+  }).join('');
+  return '<p class="section-intro">' + knownClients.length + ' clients with a static IP reservation. ' +
+    liveClients.length + ' currently connected.</p>' +
+    '<input class="search-box" placeholder="Filter by name, MAC, network&hellip;" oninput="filterRows(this, \'.client-row\')">' +
+    '<div class="table-wrap"><table><thead><tr><th>IP</th><th>MAC</th><th>Name</th><th>Network</th><th>Type</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function statsStrip(data) {
+  var onlineDevices = data.devices.filter(function(d) { return d.state === 'ONLINE'; }).length;
+  var wired = data.clients.filter(function(c) { return c.type === 'WIRED'; }).length;
+  var wireless = data.clients.filter(function(c) { return c.type === 'WIRELESS'; }).length;
+  function card(label, value, cls) {
+    return '<div class="stat-card"><div class="stat-label">' + label + '</div><div class="stat-value ' + (cls || '') + '">' + value + '</div></div>';
+  }
+  return '<div class="stats-strip">' +
+    card('Devices online', onlineDevices + '/' + data.devices.length, onlineDevices === data.devices.length ? 'good' : 'warning') +
+    card('Connected clients', data.clients.length) +
+    card('Wired / wireless', wired + '/' + wireless) +
+    card('SSIDs', data.wlans.length) +
+    card('Firewall rules', data.firewall_policies.length) +
+    card('Static IPs', data.known_clients.length) +
+    '</div>';
+}
+
+function load() {
+  document.getElementById('status-dot').className = 'status-dot';
+  document.getElementById('status-text').innerHTML = '<span class="spinner"></span> Querying controller&hellip;';
+  fetch('/api/data').then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      if (!res.ok) throw new Error(res.data.error || 'request failed');
+      var data = res.data;
+      document.getElementById('status-dot').className = 'status-dot live';
+      document.getElementById('status-text').textContent = 'Live — updated ' + new Date().toLocaleTimeString();
+      document.getElementById('content').innerHTML =
+        statsStrip(data) +
+        '<section class="doc-section" id="hardware"><h2 class="section-title"><span class="section-num">01</span> Hardware</h2>' + renderHardware(data.devices) + '</section>' +
+        '<section class="doc-section" id="networks"><h2 class="section-title"><span class="section-num">02</span> Networks / VLANs</h2>' + renderNetworks(data.networks) + '</section>' +
+        '<section class="doc-section" id="ports"><h2 class="section-title"><span class="section-num">03</span> Switch ports</h2>' + renderPorts(data.ports) + '</section>' +
+        '<section class="doc-section" id="wireless"><h2 class="section-title"><span class="section-num">04</span> Wireless</h2>' + renderWireless(data.radios, data.radio_warnings, data.wlans) + '</section>' +
+        '<section class="doc-section" id="firewall"><h2 class="section-title"><span class="section-num">05</span> Firewall</h2>' + renderFirewall(data.firewall_policies, data.firewall_groups) + '</section>' +
+        '<section class="doc-section" id="clients"><h2 class="section-title"><span class="section-num">06</span> Clients</h2>' + renderClients(data.known_clients, data.clients) + '</section>';
+    })
+    .catch(function(err) {
+      document.getElementById('status-dot').className = 'status-dot error';
+      document.getElementById('status-text').textContent = 'Could not reach controller';
+      document.getElementById('content').innerHTML = '<div class="error-box"><strong>Live query failed:</strong> ' + esc(err.message) +
+        '<br>Check the UDM is reachable from this VM and .env credentials are valid. For a guaranteed-available reference, see the static dashboard instead.</div>';
+    });
+}
+load();
+</script>
+</body>
+</html>
