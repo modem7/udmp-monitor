@@ -69,7 +69,10 @@ generated from live controller data — regenerate by re-running the
 gathering steps described at the bottom of that file.
 
 **`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** is a
-local-only live dashboard that queries the controller fresh on every load:
+local-only live dashboard that queries the controller fresh on every load.
+It imports `udmp.py`, so it needs the same dependencies and `.env`/env vars
+as the CLI (see Setup above — `pip install -r requirements.txt` first if
+you haven't already):
 
 ```bash
 python3 docs/dashboard_server.py
