@@ -15,6 +15,7 @@ Usage:
 import ipaddress
 import json
 import os
+import socket
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -139,13 +140,42 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def _get_lan_ip():
+    """Best-effort local LAN IP for a clickable link when bound to 0.0.0.0 —
+    0.0.0.0 itself isn't a browsable address. Uses the standard no-traffic
+    UDP-connect trick to ask the OS which interface it would route through;
+    falls back to None (caller prints a manual-lookup hint instead) if that
+    fails, e.g. no network at all.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # UDP connect — sets routing, sends nothing
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 def main():
     udmp.require_api_config()
     udmp.require_ui_config()
     server = HTTPServer((HOST, PORT), Handler)
-    print(f"Live dashboard: http://{HOST}:{PORT}  (Ctrl+C to stop)")
+    # flush=True: without it these lines can sit in Python's stdout buffer
+    # indefinitely whenever output isn't a TTY (redirected to a file, piped,
+    # run under nohup/systemd) — silently defeating the point of a startup
+    # banner meant to hand someone a clickable link.
+    print(f"Live dashboard: http://{HOST}:{PORT}  (Ctrl+C to stop)", flush=True)
     if HOST == "0.0.0.0":
-        print("Exposed to the LAN — no auth on this server, only expose on a trusted network.")
+        lan_ip = _get_lan_ip()
+        if lan_ip:
+            print(f"Open from another device on your LAN: http://{lan_ip}:{PORT}", flush=True)
+        else:
+            print("Could not detect a LAN IP — check with `ip addr` / `hostname -I`.", flush=True)
+        print(
+            "Exposed to the LAN — no auth on this server, only expose on a trusted network.",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
