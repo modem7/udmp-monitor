@@ -51,6 +51,20 @@ user explicitly asks for them — they're not the target user.
   into module-level constants captured at import time, since that's what
   makes the test suite able to monkeypatch env vars per-test without
   `importlib.reload`.
+- **Every env var getter must go through `_env()`, never a bare
+  `os.environ.get()`.** `_env()` strips whitespace and one matching layer
+  of quotes. This isn't defensive-programming theater — it fixes a real,
+  reproduced bug: `docker run --env-file .env` / Compose's `env_file:`
+  pass `KEY="value"` lines through **literally, quotes included**
+  (confirmed with `docker run --env-file .env alpine sh -c 'echo $VAR'`),
+  unlike `python-dotenv`, which only strips quotes when *it* parses the
+  file directly — never for a value that arrives via `--env-file` or an
+  already-exported shell var (`load_dotenv()` defaults to
+  `override=False`). Without `_env()`, a perfectly reasonable-looking
+  `UDMP_HOST="192.168.0.200"` in `.env` works fine for the CLI locally but
+  breaks specifically under Docker, surfacing as a confusing
+  `NameResolutionError` on a URL-encoded, quote-containing hostname deep
+  inside `requests` — not as a clear error naming the actual cause.
 - **Read-only, by design.** This tool does not modify controller state.
   If a task seems to need a write (changing a firewall rule, radio
   channel, etc.), that's a scope change to raise explicitly, not something

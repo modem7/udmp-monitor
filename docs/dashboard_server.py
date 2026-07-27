@@ -22,8 +22,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import udmp
 
-HOST = os.environ.get("UDMP_DASHBOARD_HOST", "127.0.0.1")
-PORT = int(os.environ.get("UDMP_DASHBOARD_PORT", "8765"))
+HOST = udmp._env("UDMP_DASHBOARD_HOST") or "127.0.0.1"
+PORT = int(udmp._env("UDMP_DASHBOARD_PORT") or "8765")
 TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard-live.html")
 
 
