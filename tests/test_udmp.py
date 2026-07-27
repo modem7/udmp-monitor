@@ -58,6 +58,48 @@ def test_base_url_uses_current_env(monkeypatch):
     assert udmp.base_url() == "https://10.0.0.1/proxy/network/integration/v1"
 
 
+def test_env_strips_double_quotes(monkeypatch):
+    monkeypatch.setenv("UDMP_HOST", '"192.168.0.200"')
+    assert udmp.get_host() == "192.168.0.200"
+
+
+def test_env_strips_single_quotes(monkeypatch):
+    monkeypatch.setenv("UDMP_HOST", "'192.168.0.200'")
+    assert udmp.get_host() == "192.168.0.200"
+
+
+def test_env_strips_surrounding_whitespace(monkeypatch):
+    monkeypatch.setenv("UDMP_HOST", "  192.168.0.200  ")
+    assert udmp.get_host() == "192.168.0.200"
+
+
+def test_env_leaves_unquoted_value_untouched(monkeypatch):
+    monkeypatch.setenv("UDMP_HOST", "192.168.0.200")
+    assert udmp.get_host() == "192.168.0.200"
+
+
+def test_env_returns_none_when_unset(monkeypatch):
+    monkeypatch.delenv("UDMP_HOST", raising=False)
+    assert udmp.get_host() is None
+
+
+def test_env_does_not_strip_mismatched_quotes(monkeypatch):
+    # Only strips a matching pair — a stray single leading/trailing quote
+    # is left alone rather than guessed at.
+    monkeypatch.setenv("UDMP_HOST", '"192.168.0.200')
+    assert udmp.get_host() == '"192.168.0.200'
+
+
+def test_get_verify_ssl_true_with_quotes(monkeypatch):
+    monkeypatch.setenv("UDMP_VERIFY_SSL", '"true"')
+    assert udmp.get_verify_ssl() is True
+
+
+def test_get_verify_ssl_defaults_false_when_unset(monkeypatch):
+    monkeypatch.delenv("UDMP_VERIFY_SSL", raising=False)
+    assert udmp.get_verify_ssl() is False
+
+
 def test_require_api_config_exits_when_missing(monkeypatch):
     monkeypatch.delenv("UDMP_HOST", raising=False)
     with pytest.raises(SystemExit):
