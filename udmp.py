@@ -32,6 +32,14 @@ def get_ui_password():
     return os.environ.get("UDMP_UI_PASSWORD")
 
 
+def get_protect_host():
+    return os.environ.get("UDMP_PROTECT_HOST")
+
+
+def get_protect_api_key():
+    return os.environ.get("UDMP_PROTECT_API_KEY")
+
+
 def get_verify_ssl():
     # UniFi OS ships a self-signed cert by default, so TLS verification is
     # off unless the controller has a trusted cert and UDMP_VERIFY_SSL=true
@@ -57,11 +65,82 @@ def require_ui_config():
         )
 
 
+def require_protect_config():
+    if not get_protect_host() or not get_protect_api_key():
+        sys.exit(
+            "UDMP_PROTECT_HOST and UDMP_PROTECT_API_KEY must be set "
+            "(env vars or .env file) for this command"
+        )
+
+
 def make_session():
     session = requests.Session()
     session.headers.update({"X-API-Key": get_api_key(), "Accept": "application/json"})
     session.verify = get_verify_ssl()
     return session
+
+
+def protect_base_url():
+    return f"https://{get_protect_host()}/proxy/protect/integration/v1"
+
+
+def make_protect_session():
+    """UniFi Protect's own official, versioned Integration API — a separate
+    app/host/API-key from the Network side, since the NVR here is a
+    standalone appliance (not running on the same console as the gateway).
+    Unlike the legacy Network session API, this one is documented and
+    versioned (see /meta/info), so no undocumented-API caveat applies.
+    """
+    session = requests.Session()
+    session.headers.update({"X-API-Key": get_protect_api_key(), "Accept": "application/json"})
+    session.verify = get_verify_ssl()
+    return session
+
+
+def get_protect_meta(session):
+    r = session.get(f"{protect_base_url()}/meta/info", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_protect_nvr(session):
+    r = session.get(f"{protect_base_url()}/nvrs", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_protect_cameras(session):
+    r = session.get(f"{protect_base_url()}/cameras", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def get_protect_chimes(session):
+    r = session.get(f"{protect_base_url()}/chimes", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def summarize_protect_status(meta, nvr, cameras, chimes):
+    """Status/health only — deliberately excludes anything image/video
+    related (snapshots, recordings, live view), which is a separate,
+    more sensitive scope than what this was built for. No storage/disk
+    usage endpoint exists in this API version (confirmed 404, not
+    assumed) so that isn't included either.
+    """
+    return {
+        "application_version": meta.get("applicationVersion"),
+        "nvr": {
+            "name": nvr.get("name"),
+            "arm_status": nvr.get("armMode", {}).get("status"),
+        },
+        "cameras": [
+            {"name": c.get("name"), "mac": c.get("mac"), "state": c.get("state")} for c in cameras
+        ],
+        "chimes": [
+            {"name": c.get("name"), "mac": c.get("mac"), "state": c.get("state")} for c in chimes
+        ],
+    }
 
 
 def legacy_base_url():
@@ -453,6 +532,14 @@ def cmd_known_clients(args, session):
     emit(summarize_known_clients(clients, networks, fixed_ip_only=not args.all))
 
 
+def cmd_protect_status(args, session):
+    meta = get_protect_meta(session)
+    nvr = get_protect_nvr(session)
+    cameras = get_protect_cameras(session)
+    chimes = get_protect_chimes(session)
+    emit(summarize_protect_status(meta, nvr, cameras, chimes))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -527,6 +614,15 @@ def build_parser():
         help="Include clients without a static/fixed IP reservation (default: fixed-IP only)",
     )
 
+    sub.add_parser(
+        "protect-status",
+        help=(
+            "UniFi Protect NVR/camera/chime status — requires "
+            "UDMP_PROTECT_HOST/UDMP_PROTECT_API_KEY (separate credential, "
+            "no --site: Protect isn't organized by Network-app site)"
+        ),
+    )
+
     return parser
 
 
@@ -543,19 +639,26 @@ def main():
         "networks": cmd_networks,
         "ports": cmd_ports,
         "known-clients": cmd_known_clients,
+        "protect-status": cmd_protect_status,
     }
     try:
-        if args.command in LEGACY_API_COMMANDS:
+        if args.command == "protect-status":
+            require_protect_config()
+            session = make_protect_session()
+            target_host = get_protect_host()
+        elif args.command in LEGACY_API_COMMANDS:
             require_ui_config()
             session = make_legacy_session()
+            target_host = get_host()
         else:
             require_api_config()
             session = make_session()
+            target_host = get_host()
         commands[args.command](args, session)
     except requests.HTTPError as e:
         sys.exit(f"API request failed: {e}")
     except requests.ConnectionError as e:
-        sys.exit(f"Could not reach {get_host()}: {e}")
+        sys.exit(f"Could not reach {target_host}: {e}")
 
 
 if __name__ == "__main__":

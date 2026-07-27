@@ -31,7 +31,16 @@ whichever commands you need.
    `UDMP_UI_PASSWORD` for it. This API can change or break without notice
    on a firmware update, unlike the versioned Integration API.
 
-3. Install dependencies into a virtual environment (recommended):
+3. **UniFi Protect Integration API** (`protect-status`, optional): only
+   needed if you have a Protect NVR and want camera/chime/NVR status.
+   Separate host and API key from the Network side — the NVR is often a
+   standalone appliance, not the same console as the gateway. Generate a
+   key in the Protect app's own integrations settings and set
+   `UDMP_PROTECT_HOST`/`UDMP_PROTECT_API_KEY`. Official, versioned API
+   (confirmed via `/meta/info`), same trust level as the Integration API —
+   no undocumented-API caveat here.
+
+4. Install dependencies into a virtual environment (recommended):
    ```bash
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
@@ -57,9 +66,10 @@ whichever commands you need.
    straight into the system Python (the flag is only required on
    externally-managed distros; harmless elsewhere).
 
-4. Credentials live in `.env` (gitignored) or shell env vars
-   (`UDMP_HOST`, `UDMP_API_KEY`, `UDMP_UI_USERNAME`, `UDMP_UI_PASSWORD`) —
-   never pasted into chat or passed as a command-line argument.
+5. Credentials live in `.env` (gitignored) or shell env vars
+   (`UDMP_HOST`, `UDMP_API_KEY`, `UDMP_UI_USERNAME`, `UDMP_UI_PASSWORD`,
+   `UDMP_PROTECT_HOST`, `UDMP_PROTECT_API_KEY`) — never pasted into chat
+   or passed as a command-line argument.
 
    The controller's cert is self-signed by default, so TLS verification is
    off unless `UDMP_VERIFY_SSL=true` is set.
@@ -78,6 +88,9 @@ python3 udmp.py firewall       [--site <name-or-desc>]  # custom firewall polici
 python3 udmp.py networks       [--site <name-or-desc>]  # VLANs, subnets, DHCP, WAN config
 python3 udmp.py ports          [--site <name-or-desc>]  # per-switch port name/VLAN/PoE assignments
 python3 udmp.py known-clients  [--site <name-or-desc>] [--all]  # all clients ever seen, not just connected (fixed-IP only by default)
+
+# Protect API — needs UDMP_PROTECT_HOST/UDMP_PROTECT_API_KEY, no --site
+python3 udmp.py protect-status  # NVR/camera/chime status — no snapshots/recordings, status only
 ```
 
 If `--site` is omitted, the first site returned by the controller is used.
@@ -113,6 +126,37 @@ still work) as one self-contained HTML file with no server dependency,
 safe to share, store, or back up as-is. There's no separate generation
 script to keep in sync; the live dashboard *is* the source, and a snapshot
 is just "what it showed, frozen," downloaded straight from the browser.
+
+## Docker
+
+The live dashboard can run as a container instead of a local venv. It
+writes nothing to disk — no volumes needed, just env vars for credentials.
+
+```bash
+docker build -t udmp-monitor .
+docker run -d -p 8765:8765 --env-file .env udmp-monitor
+```
+
+Or with Compose:
+
+```yaml
+services:
+  udmp-dashboard:
+    build: .
+    ports:
+      - "8765:8765"
+    env_file: .env
+    restart: unless-stopped
+```
+
+Runs as a non-root user (UID/GID 101 by default) — override at build time
+with `--build-arg UID=1000 --build-arg GID=1000` (or the equivalent
+`build.args` in Compose), or at runtime with `docker run -u 1000:1000`.
+`UDMP_DASHBOARD_HOST=0.0.0.0` is already set inside the image (required
+for Docker's port mapping to reach it at all); the printed "open from
+another device" IP will be the container's own internal bridge address,
+not your host's real LAN IP — reach it via the host's IP and the mapped
+port instead.
 
 ## Development
 
