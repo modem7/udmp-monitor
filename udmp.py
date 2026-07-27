@@ -16,28 +16,57 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 LEGACY_API_COMMANDS = {"wlans", "firewall", "networks", "ports", "known-clients"}
 
 
+def _env(name):
+    """Read an env var and strip whitespace + one layer of matching
+    quotes, since a value can reach os.environ already-quoted through
+    paths python-dotenv never touches:
+
+    - `docker run --env-file .env` / Compose's `env_file:` pass KEY="value"
+      lines through literally, quotes and all — confirmed by testing
+      directly (`docker run --env-file .env alpine sh -c 'echo $VAR'`
+      prints the quotes). python-dotenv's own quote-stripping only
+      applies when *it* parses the .env file; it never runs inside a
+      container using --env-file.
+    - Even locally, `load_dotenv()` defaults to `override=False`, so a
+      value already exported in the shell (e.g. a stray
+      `export UDMP_HOST='"192.168.0.200"'`) wins over the correctly-parsed
+      .env file value and keeps its literal quotes.
+
+    Without this, a quoted value produces a working-looking config that
+    fails deep inside `requests` with a confusing NameResolutionError
+    quoting a URL-encoded hostname, rather than a clear error here.
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1]
+    return value
+
+
 def get_host():
-    return os.environ.get("UDMP_HOST")
+    return _env("UDMP_HOST")
 
 
 def get_api_key():
-    return os.environ.get("UDMP_API_KEY")
+    return _env("UDMP_API_KEY")
 
 
 def get_ui_username():
-    return os.environ.get("UDMP_UI_USERNAME")
+    return _env("UDMP_UI_USERNAME")
 
 
 def get_ui_password():
-    return os.environ.get("UDMP_UI_PASSWORD")
+    return _env("UDMP_UI_PASSWORD")
 
 
 def get_protect_host():
-    return os.environ.get("UDMP_PROTECT_HOST")
+    return _env("UDMP_PROTECT_HOST")
 
 
 def get_protect_api_key():
-    return os.environ.get("UDMP_PROTECT_API_KEY")
+    return _env("UDMP_PROTECT_API_KEY")
 
 
 def get_verify_ssl():
@@ -45,7 +74,7 @@ def get_verify_ssl():
     # off unless the controller has a trusted cert and UDMP_VERIFY_SSL=true
     # is set. This is a same-LAN, API-key-authenticated connection, not an
     # internet-facing one — MITM risk is limited to the local network.
-    return os.environ.get("UDMP_VERIFY_SSL", "false").lower() == "true"
+    return (_env("UDMP_VERIFY_SSL") or "false").lower() == "true"
 
 
 def base_url():
