@@ -4,19 +4,32 @@ Read this automatically at the start of every session in this repo.
 
 ## What this is
 
-A read-only tool against a UniFi Dream Machine Pro, using two separate
-credentials against two separate APIs:
+A read-only tool against UniFi hardware, using three separate credentials
+against three separate APIs:
 
-- **Official Integration API** (`/proxy/network/integration/v1`), API-key
-  auth (`UDMP_API_KEY`). Commands: `sites`, `devices`, `clients`, `radios`.
-- **Legacy/undocumented session API** (`/proxy/network/api/...` and
-  `/proxy/network/v2/api/...`), cookie auth via a dedicated, read-only-role
-  local admin account (`UDMP_UI_USERNAME`/`UDMP_UI_PASSWORD`). Commands:
-  `wlans`, `firewall`, `networks`, `ports`, `known-clients`. This is what
-  community tools like `node-unifi`/unifi-poller use — unofficial,
-  undocumented, can change without notice on a firmware update. Used only
-  because the Integration API doesn't expose WLAN/SSID config or firewall
-  policies at all (confirmed by probing, not assumed — see below).
+- **Official Network Integration API** (`/proxy/network/integration/v1`),
+  API-key auth (`UDMP_API_KEY`) against the UDM Pro. Commands: `sites`,
+  `devices`, `clients`, `radios`.
+- **Legacy/undocumented Network session API** (`/proxy/network/api/...`
+  and `/proxy/network/v2/api/...`), cookie auth via a dedicated,
+  read-only-role local admin account (`UDMP_UI_USERNAME`/
+  `UDMP_UI_PASSWORD`). Commands: `wlans`, `firewall`, `networks`, `ports`,
+  `known-clients`. This is what community tools like `node-unifi`/
+  unifi-poller use — unofficial, undocumented, can change without notice
+  on a firmware update. Used only because the Integration API doesn't
+  expose WLAN/SSID config or firewall policies at all (confirmed by
+  probing, not assumed — see below).
+- **Official Protect Integration API**
+  (`/proxy/protect/integration/v1`), API-key auth (`UDMP_PROTECT_HOST`/
+  `UDMP_PROTECT_API_KEY`) against the NVR — often a **separate physical
+  appliance** from the UDM Pro, not the same console, hence its own host
+  var. Command: `protect-status`. Official and versioned like the Network
+  Integration API (confirmed via `/meta/info`) — no undocumented-API
+  caveat here. **Status/health only, by explicit scope decision** —
+  snapshots, recordings, and live view are a meaningfully more sensitive
+  surface (actual video/privacy data) and were deliberately left out;
+  don't add them without raising that as its own explicit decision, the
+  same way write access was for the Network side.
 
 Access is deliberately API-only, not SSH — the user explicitly ruled SSH
 out. Nothing in this tool writes to the controller — it only reads.
@@ -119,6 +132,20 @@ hostnames without understanding why it's IP-or-localhost-only in the first
 place — the whole point is that a rebinding attack's `Host` header is
 always a real domain name, never an IP.
 
+## Docker
+
+`Dockerfile` runs the live dashboard only (`docs/dashboard_server.py`) —
+not the CLI, which isn't meant to run in a container. Non-root by default
+(`ARG UID`/`GID`, default 101, override at build time or with `docker run
+-u`). Deliberately **no PUID/PGID env vars or s6-overlay** — that pattern
+exists to fix ownership on bind-mounted volumes at container startup, and
+this container has no volumes at all (no persistent state, credentials
+come in via env vars). Don't add that complexity back without a real
+volume need driving it. `UDMP_DASHBOARD_HOST=0.0.0.0` is baked in via
+`ENV` since `127.0.0.1` inside a container is unreachable through Docker's
+port mapping — the `_host_is_allowed()` DNS-rebinding check still applies
+regardless of bind address.
+
 ## Before considering any change "done"
 
 1. `ruff check .` and `ruff format --check .` — both run in CI, fix before
@@ -135,12 +162,12 @@ always a real domain name, never an IP.
 
 ## Credentials
 
-`UDMP_HOST`/`UDMP_API_KEY`/`UDMP_UI_USERNAME`/`UDMP_UI_PASSWORD` come from
-the environment or a local `.env` (gitignored) — never from a command-line
-argument or a value pasted into chat. See `README.md` for setup. The
-`UDMP_UI_*` account is a dedicated local admin scoped to a read-only role
-(named "Claude Code" on the controller) — never suggest reusing the
-user's own admin login here.
+`UDMP_HOST`/`UDMP_API_KEY`/`UDMP_UI_USERNAME`/`UDMP_UI_PASSWORD`/
+`UDMP_PROTECT_HOST`/`UDMP_PROTECT_API_KEY` come from the environment or a
+local `.env` (gitignored) — never from a command-line argument or a value
+pasted into chat. See `README.md` for setup. The `UDMP_UI_*` account is a
+dedicated local admin scoped to a read-only role (named "Claude Code" on
+the controller) — never suggest reusing the user's own admin login here.
 
 ## Workflow
 

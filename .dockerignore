@@ -1,0 +1,14 @@
+.git
+.github
+.env
+*.env.local
+__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+.ruff_cache
+tests
+docs/NETWORK.md
+CLAUDE.md
+README.md
