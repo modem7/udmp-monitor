@@ -40,7 +40,14 @@ def udmp_env(monkeypatch):
     # local .env (loaded once at module import time) leak into any test
     # that doesn't explicitly override a given var, which is exactly what
     # happened with UDMP_UI_USERNAME/PASSWORD before this fixture covered them.
-    for var in ("UDMP_HOST", "UDMP_API_KEY", "UDMP_UI_USERNAME", "UDMP_UI_PASSWORD"):
+    for var in (
+        "UDMP_HOST",
+        "UDMP_API_KEY",
+        "UDMP_UI_USERNAME",
+        "UDMP_UI_PASSWORD",
+        "UDMP_PROTECT_HOST",
+        "UDMP_PROTECT_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("UDMP_HOST", "udmp.test")
     monkeypatch.setenv("UDMP_API_KEY", "test-key")
@@ -603,3 +610,74 @@ def test_cmd_known_clients_prints_json(capsys):
     udmp.cmd_known_clients(args, session)
     out = json.loads(capsys.readouterr().out)
     assert out[0]["name"] == "Server"
+
+
+def test_require_protect_config_exits_when_missing():
+    with pytest.raises(SystemExit):
+        udmp.require_protect_config()
+
+
+def test_require_protect_config_passes_when_set(monkeypatch):
+    monkeypatch.setenv("UDMP_PROTECT_HOST", "protect.test")
+    monkeypatch.setenv("UDMP_PROTECT_API_KEY", "protect-key")
+    udmp.require_protect_config()
+
+
+def test_make_protect_session_sets_api_key_header(monkeypatch):
+    monkeypatch.setenv("UDMP_PROTECT_HOST", "protect.test")
+    monkeypatch.setenv("UDMP_PROTECT_API_KEY", "protect-key")
+    session = udmp.make_protect_session()
+    assert session.headers["X-API-Key"] == "protect-key"
+
+
+def test_get_protect_meta_returns_json():
+    session = fake_session({"/meta/info": {"applicationVersion": "7.1.87"}})
+    assert udmp.get_protect_meta(session) == {"applicationVersion": "7.1.87"}
+
+
+def test_get_protect_nvr_returns_json():
+    session = fake_session({"/nvrs": {"name": "Sauron"}})
+    assert udmp.get_protect_nvr(session) == {"name": "Sauron"}
+
+
+def test_get_protect_cameras_returns_json():
+    session = fake_session({"/cameras": [{"name": "Doorbell"}]})
+    assert udmp.get_protect_cameras(session) == [{"name": "Doorbell"}]
+
+
+def test_get_protect_chimes_returns_json():
+    session = fake_session({"/chimes": [{"name": "Upstairs Chime"}]})
+    assert udmp.get_protect_chimes(session) == [{"name": "Upstairs Chime"}]
+
+
+def test_summarize_protect_status_shapes_output():
+    meta = {"applicationVersion": "7.1.87"}
+    nvr = {"name": "Sauron", "armMode": {"status": "disabled"}}
+    cameras = [{"name": "Doorbell", "mac": "aa:bb", "state": "CONNECTED"}]
+    chimes = [{"name": "Chime", "mac": "cc:dd", "state": "CONNECTED"}]
+    summary = udmp.summarize_protect_status(meta, nvr, cameras, chimes)
+    assert summary["application_version"] == "7.1.87"
+    assert summary["nvr"] == {"name": "Sauron", "arm_status": "disabled"}
+    assert summary["cameras"] == [{"name": "Doorbell", "mac": "aa:bb", "state": "CONNECTED"}]
+    assert summary["chimes"] == [{"name": "Chime", "mac": "cc:dd", "state": "CONNECTED"}]
+
+
+def test_summarize_protect_status_handles_missing_arm_mode():
+    summary = udmp.summarize_protect_status({}, {"name": "Sauron"}, [], [])
+    assert summary["nvr"]["arm_status"] is None
+
+
+def test_cmd_protect_status_prints_json(capsys):
+    session = fake_session(
+        {
+            "/meta/info": {"applicationVersion": "7.1.87"},
+            "/nvrs": {"name": "Sauron", "armMode": {"status": "disabled"}},
+            "/cameras": [{"name": "Doorbell", "mac": "aa:bb", "state": "CONNECTED"}],
+            "/chimes": [{"name": "Chime", "mac": "cc:dd", "state": "CONNECTED"}],
+        }
+    )
+    args = MagicMock()
+    udmp.cmd_protect_status(args, session)
+    out = json.loads(capsys.readouterr().out)
+    assert out["application_version"] == "7.1.87"
+    assert out["cameras"][0]["name"] == "Doorbell"
