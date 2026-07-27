@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:latest
 
-FROM python:3.12-alpine
+FROM python:3.14-alpine
 
 ARG UID=101
 ARG GID=101
