@@ -51,7 +51,24 @@ def gather_live():
         udmp.get_known_clients(legacy, site_name), networks, fixed_ip_only=True
     )
 
+    protect = None
+    if udmp.get_protect_host() and udmp.get_protect_api_key():
+        # The NVR is often a separate physical appliance from the UDM Pro —
+        # don't let it being unreachable/misconfigured take down the rest of
+        # an otherwise-working dashboard.
+        try:
+            protect_session = udmp.make_protect_session()
+            protect = udmp.summarize_protect_status(
+                udmp.get_protect_meta(protect_session),
+                udmp.get_protect_nvr(protect_session),
+                udmp.get_protect_cameras(protect_session),
+                udmp.get_protect_chimes(protect_session),
+            )
+        except Exception as e:
+            protect = {"error": str(e)}
+
     return {
+        "protect": protect,
         "devices": devices,
         "clients": clients,
         "radios": radios,

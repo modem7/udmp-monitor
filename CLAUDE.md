@@ -138,6 +138,19 @@ only by a security scan, not by testing, so also grep for bare `+ <field>
 +` concatenation patterns when reviewing this file, don't just trust the
 functions that do call `esc()` correctly.
 
+`gather_live()` includes Protect (NVR) status only if
+`UDMP_PROTECT_HOST`/`UDMP_PROTECT_API_KEY` are set — it's genuinely optional
+config, not everyone running this tool has a UNVR. If configured, a failure
+talking to the NVR (separate physical appliance, can be down independently
+of the UDM) is caught and surfaced as `{"error": ...}` under the `protect`
+key rather than failing the whole `/api/data` response — the rest of the
+dashboard shouldn't go dark because the NVR is unreachable. This gap
+existed for a while: `protect-status` was added as a CLI command but never
+wired into the live dashboard until a user noticed cameras/NVR data was
+simply absent from the page — when adding a new CLI command that overlaps
+with dashboard scope, wire it into `gather_live()`/`dashboard-live.html` in
+the same change, don't treat the dashboard as a separate follow-up.
+
 `docs/dashboard_server.py`'s `_host_is_allowed()` exists specifically to
 block DNS-rebinding attacks: it only serves requests whose `Host` header
 is `localhost` or a literal IP, never an arbitrary DNS name, regardless of
