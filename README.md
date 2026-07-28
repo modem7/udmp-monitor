@@ -2,15 +2,32 @@
 
 [![CI](https://github.com/modem7/udmp-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/modem7/udmp-monitor/actions/workflows/ci.yml)
 [![Last Commit](https://img.shields.io/github/last-commit/modem7/udmp-monitor)](https://github.com/modem7/udmp-monitor/commits/master)
+[![Built with Claude](https://img.shields.io/badge/Built%20with-Claude-D97757?logo=claude&logoColor=fff)](https://claude.com/claude-code)
 
-Read-only tooling for querying a UniFi Dream Machine Pro over its local
-UniFi OS Network Integration API (`/proxy/network/integration/v1`).
+> **Vibe-coded.** This was built almost entirely by prompting Claude —
+> it hasn't been carefully hand-reviewed line by line. It works for my
+> setup; read the code before trusting it with yours.
 
-This is not a general-purpose CLI for humans to run interactively — it's
-built for Claude to invoke directly (via `python3 udmp.py <command>`) to
-answer diagnostic questions about the network on request. Output is JSON
-on stdout for reliable machine parsing rather than human-formatted tables.
-See `CLAUDE.md` for the operating rules.
+Read-only tooling for a UniFi Dream Machine Pro (and optional Protect
+NVR) network — sites, devices, clients, radios, WLANs, firewall policies,
+networks/VLANs, switch ports, and camera/NVR status, across the official
+Network Integration API, the legacy session API (for config the
+Integration API doesn't expose), and the official Protect Integration
+API. Also includes a local live dashboard (`docs/`) and a Docker image to
+run it as a container.
+
+The CLI itself is not a general-purpose tool for humans to run
+interactively — it's built for Claude to invoke directly (via
+`python3 udmp.py <command>`) to answer diagnostic questions about the
+network on request. Output is JSON on stdout for reliable machine parsing
+rather than human-formatted tables. See `CLAUDE.md` for the operating
+rules. The live dashboard, by contrast, *is* meant for a human to open in
+a browser — see below.
+
+![Dashboard screenshot](docs/images/dashboard-screenshot.png)
+
+*Screenshot of the live dashboard (see below) with entirely made-up
+sample data — no real network details.*
 
 ## Setup
 
