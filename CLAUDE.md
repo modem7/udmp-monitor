@@ -196,6 +196,23 @@ volume need driving it. `UDMP_DASHBOARD_HOST=0.0.0.0` is baked in via
 port mapping — the `_host_is_allowed()` DNS-rebinding check still applies
 regardless of bind address.
 
+`docker-compose.yml` uses `network_mode: host` (explicit user choice, not
+a default worth reconsidering casually) — no `ports:` mapping, since host
+networking shares the host's network stack directly rather than bridging
+through Docker's NAT. This is also why `_get_lan_ip()`'s startup banner
+shows the *real* host LAN IP under this compose file, unlike `docker run
+-p`/bridge-mode Compose where it shows the container's internal bridge
+address instead — worth remembering if that behavior ever looks like a
+regression, it's a networking-mode difference, not a bug.
+
+**Never run `docker compose config` (or anything else that resolves
+`env_file`) against the real `.env`** — it prints the fully-resolved
+environment, secrets included, straight to stdout. Validate compose YAML
+with `python3 -c "import yaml; yaml.safe_load(open('docker-compose.yml'))"`
+instead, and if you need to confirm the stack actually runs, use `docker
+compose up -d` (doesn't echo resolved env vars) followed by `docker compose
+down`, not `config`.
+
 ## Before considering any change "done"
 
 1. `ruff check .` and `ruff format --check .` — both run in CI, fix before

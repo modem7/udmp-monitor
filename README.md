@@ -137,26 +137,28 @@ docker build -t udmp-monitor .
 docker run -d -p 8765:8765 --env-file .env udmp-monitor
 ```
 
-Or with Compose:
+Or with the included `docker-compose.yml`:
 
-```yaml
-services:
-  udmp-dashboard:
-    build: .
-    ports:
-      - "8765:8765"
-    env_file: .env
-    restart: unless-stopped
+```bash
+docker compose up -d
+docker compose down
 ```
+
+It uses `network_mode: host` rather than a mapped port — the container
+shares the host's network stack directly, so the printed "open from
+another device" IP is your host's real LAN IP (host networking gives the
+same UDP-connect trick a real interface to detect, instead of a bridge
+network's internal IP). The tradeoff is that host networking has no
+network-namespace isolation from the host at all, which matters more than
+usual here since the dashboard has no auth of its own — only use it on a
+trusted host. If you'd rather keep bridge-mode isolation and a mapped
+port, use `docker run -p 8765:8765` as shown above instead.
 
 Runs as a non-root user (UID/GID 101 by default) — override at build time
 with `--build-arg UID=1000 --build-arg GID=1000` (or the equivalent
 `build.args` in Compose), or at runtime with `docker run -u 1000:1000`.
 `UDMP_DASHBOARD_HOST=0.0.0.0` is already set inside the image (required
-for Docker's port mapping to reach it at all); the printed "open from
-another device" IP will be the container's own internal bridge address,
-not your host's real LAN IP — reach it via the host's IP and the mapped
-port instead.
+for Docker's port mapping to reach it at all in bridge mode).
 
 ## Development
 

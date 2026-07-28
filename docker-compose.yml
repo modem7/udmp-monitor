@@ -1,0 +1,13 @@
+services:
+  udmp-dashboard:
+    build: .
+    # Override to match your host UID/GID if you hit permission issues —
+    # not needed by default, this container has no volumes to own:
+    #   build:
+    #     context: .
+    #     args:
+    #       UID: 1000
+    #       GID: 1000
+    network_mode: host
+    env_file: .env
+    restart: unless-stopped
