@@ -92,6 +92,16 @@ user explicitly asks for them — they're not the target user.
     (cameras, NVR, chime) that reveals their real model — those devices
     never show up as adopted Network-app devices, only as clients. Worth
     checking there before assuming Protect hardware is undocumentable.
+  - The **UP-AI-Port** is a real, confirmed exception to "Protect hardware
+    is covered by the Protect Integration API": it doesn't appear in
+    `/cameras`, `/sensors`, `/lights`, `/viewers`, `/bridges`, or `/nvrs`
+    (checked all six directly against a real controller with one present —
+    all either empty or simply don't contain it). It's only visible via the
+    legacy `rest/user` client list, tagged with
+    `unifi_device_info_from_ucore.computed_model == "AI Port"` — see
+    `summarize_protect_ai_ports()`. Don't assume a device category is fully
+    absent from the Protect API just because the obvious endpoints don't
+    have it; check `rest/user` first.
   - `port_overrides` (per-port name/native-VLAN/PoE intent) only exists on
     `stat/device` (legacy), not the Integration API's device detail —
     that endpoint only has live port state/speed, not configured intent.
@@ -137,6 +147,19 @@ from raw (non-`esc()`) interpolation slipping through code review; caught
 only by a security scan, not by testing, so also grep for bare `+ <field>
 +` concatenation patterns when reviewing this file, don't just trust the
 functions that do call `esc()` correctly.
+
+`gather_live()` includes Protect (NVR) status only if
+`UDMP_PROTECT_HOST`/`UDMP_PROTECT_API_KEY` are set — it's genuinely optional
+config, not everyone running this tool has a UNVR. If configured, a failure
+talking to the NVR (separate physical appliance, can be down independently
+of the UDM) is caught and surfaced as `{"error": ...}` under the `protect`
+key rather than failing the whole `/api/data` response — the rest of the
+dashboard shouldn't go dark because the NVR is unreachable. This gap
+existed for a while: `protect-status` was added as a CLI command but never
+wired into the live dashboard until a user noticed cameras/NVR data was
+simply absent from the page — when adding a new CLI command that overlaps
+with dashboard scope, wire it into `gather_live()`/`dashboard-live.html` in
+the same change, don't treat the dashboard as a separate follow-up.
 
 `docs/dashboard_server.py`'s `_host_is_allowed()` exists specifically to
 block DNS-rebinding attacks: it only serves requests whose `Host` header

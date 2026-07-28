@@ -602,6 +602,41 @@ def test_summarize_known_clients_resolves_network_and_protect_model():
     assert summary[0]["product_model"] == "UNVR"
 
 
+def test_summarize_protect_ai_ports_filters_to_ai_port_model():
+    clients = [
+        {
+            "name": None,
+            "mac": "1c:0b:8b:da:d1:e8",
+            "last_ip": "192.168.40.189",
+            "unifi_device_info_from_ucore": {
+                "computed_model": "AI Port",
+                "name": "UVC AI Port",
+                "device_state": "CONNECTED",
+                "fw_version": "aiport4G.mt8390.v4.72.14.67.67484d6.241008.0451",
+            },
+        },
+        {
+            "name": "Sauron",
+            "mac": "cc",
+            "unifi_device_info_from_ucore": {"computed_model": "UNVR"},
+        },
+        {"name": "Phone", "mac": "bb"},
+    ]
+    summary = udmp.summarize_protect_ai_ports(clients)
+    assert len(summary) == 1
+    assert summary[0] == {
+        "name": "UVC AI Port",
+        "mac": "1c:0b:8b:da:d1:e8",
+        "ip": "192.168.40.189",
+        "state": "CONNECTED",
+        "fw_version": "aiport4G.mt8390.v4.72.14.67.67484d6.241008.0451",
+    }
+
+
+def test_summarize_protect_ai_ports_returns_empty_when_none_present():
+    assert udmp.summarize_protect_ai_ports([{"name": "Phone", "mac": "bb"}]) == []
+
+
 def test_cmd_networks_prints_json(capsys):
     session = fake_session(
         {

@@ -313,6 +313,35 @@ def summarize_known_clients(clients, networks, fixed_ip_only=True):
     return rows
 
 
+def summarize_protect_ai_ports(clients):
+    """UP-AI-Port devices (add AI processing to a non-AI camera) don't
+    appear anywhere in the Protect Integration API — confirmed by probing
+    /cameras, /sensors, /lights, /viewers, /bridges, and /nvrs directly,
+    none contain it. It only shows up via the legacy Network API's
+    rest/user client list (see get_known_clients), identified the same way
+    summarize_known_clients spots other Protect hardware:
+    unifi_device_info_from_ucore.computed_model. Kept separate from that
+    function rather than folded in, since AI Port has no fixed IP here and
+    would be dropped by fixed_ip_only filtering, and belongs conceptually
+    with the Protect dashboard section, not the general client list.
+    """
+    rows = []
+    for c in clients:
+        info = c.get("unifi_device_info_from_ucore") or {}
+        if info.get("computed_model") != "AI Port":
+            continue
+        rows.append(
+            {
+                "name": info.get("name") or c.get("name") or c.get("hostname"),
+                "mac": c.get("mac"),
+                "ip": c.get("last_ip"),
+                "state": info.get("device_state"),
+                "fw_version": info.get("fw_version"),
+            }
+        )
+    return rows
+
+
 # Fields worth surfacing for a WiFi config review — security posture and
 # roaming/isolation behavior, not every low-level radio knob wlanconf has.
 WLAN_SUMMARY_FIELDS = [
