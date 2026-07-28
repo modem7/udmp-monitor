@@ -102,6 +102,19 @@ user explicitly asks for them — they're not the target user.
     `summarize_protect_ai_ports()`. Don't assume a device category is fully
     absent from the Protect API just because the obvious endpoints don't
     have it; check `rest/user` first.
+  - **Firmware version isn't in the Protect Integration API at all** —
+    confirmed absent from both `/cameras` (list) and `/cameras/{id}`
+    (detail); `/nvrs` has no version field either, and no MAC either, so it
+    can't even be cross-referenced by MAC for the NVR specifically. It only
+    exists via `rest/user`'s `unifi_device_info_from_ucore.fw_version` —
+    `summarize_protect_status()`'s optional `legacy_clients` param merges it
+    in, matched by normalized MAC for cameras/chimes and by name for the
+    NVR. This can legitimately come back `None` for a device that's been
+    offline long enough that its `unifi_device_info_from_ucore` block isn't
+    populated at all (seen with "Birbcam" — offline, no ucore block —
+    vs. "G6 180", also offline but still has one). Don't treat a `None`
+    firmware value as a bug without checking whether the legacy client
+    entry actually has that block; it may genuinely not be known.
   - `port_overrides` (per-port name/native-VLAN/PoE intent) only exists on
     `stat/device` (legacy), not the Integration API's device detail —
     that endpoint only has live port state/speed, not configured intent.

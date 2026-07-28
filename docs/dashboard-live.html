@@ -404,7 +404,8 @@ function renderProtect(protect, aiPorts) {
     return devices.map(function(d) {
       var chip = d.state === 'CONNECTED' ? 'good' : 'critical';
       return '<tr><td><strong>' + esc(d.name) + '</strong></td><td class="mono dim">' + esc(d.mac) +
-        '</td><td><span class="chip ' + chip + '">' + esc(d.state) + '</span></td></tr>';
+        '</td><td><span class="chip ' + chip + '">' + esc(d.state) + '</span></td><td class="mono dim">' +
+        esc(d.fw_version) + '</td></tr>';
     }).join('');
   }
   var aiPortBlock = '';
@@ -431,10 +432,11 @@ function renderProtect(protect, aiPorts) {
   return '<div class="card"><p class="card-title">' + esc(protect.nvr.name) + '</p><table>' +
     '<tr><td class="dim">Application version</td><td class="mono">' + esc(protect.application_version) + '</td></tr>' +
     '<tr><td class="dim">Arm status</td><td><span class="chip ' + armChip + '">' + esc(protect.nvr.arm_status) + '</span></td></tr>' +
+    '<tr><td class="dim">Firmware</td><td class="mono">' + esc(protect.nvr.fw_version) + '</td></tr>' +
     '</table></div>' +
-    '<div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Camera</th><th>MAC</th><th>State</th></tr></thead><tbody>' +
+    '<div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Camera</th><th>MAC</th><th>State</th><th>Firmware</th></tr></thead><tbody>' +
     deviceRows(protect.cameras) + '</tbody></table></div>' +
-    '<div class="table-wrap"><table><thead><tr><th>Chime</th><th>MAC</th><th>State</th></tr></thead><tbody>' +
+    '<div class="table-wrap"><table><thead><tr><th>Chime</th><th>MAC</th><th>State</th><th>Firmware</th></tr></thead><tbody>' +
     deviceRows(protect.chimes) + '</tbody></table></div>' + aiPortBlock;
 }
 

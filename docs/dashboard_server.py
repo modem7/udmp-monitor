@@ -63,6 +63,7 @@ def gather_live():
                 udmp.get_protect_nvr(protect_session),
                 udmp.get_protect_cameras(protect_session),
                 udmp.get_protect_chimes(protect_session),
+                legacy_clients,
             )
         except Exception as e:
             protect = {"error": str(e)}
