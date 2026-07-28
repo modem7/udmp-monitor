@@ -141,6 +141,7 @@ Or with the included `docker-compose.yml`:
 
 ```bash
 docker compose up -d
+docker compose down
 ```
 
 It uses `network_mode: host` rather than a mapped port — the container
