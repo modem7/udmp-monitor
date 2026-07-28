@@ -734,14 +734,56 @@ def test_summarize_protect_status_shapes_output():
     chimes = [{"name": "Chime", "mac": "cc:dd", "state": "CONNECTED"}]
     summary = udmp.summarize_protect_status(meta, nvr, cameras, chimes)
     assert summary["application_version"] == "7.1.87"
-    assert summary["nvr"] == {"name": "Sauron", "arm_status": "disabled"}
-    assert summary["cameras"] == [{"name": "Doorbell", "mac": "aa:bb", "state": "CONNECTED"}]
-    assert summary["chimes"] == [{"name": "Chime", "mac": "cc:dd", "state": "CONNECTED"}]
+    assert summary["nvr"] == {"name": "Sauron", "arm_status": "disabled", "fw_version": None}
+    assert summary["cameras"] == [
+        {"name": "Doorbell", "mac": "aa:bb", "state": "CONNECTED", "fw_version": None}
+    ]
+    assert summary["chimes"] == [
+        {"name": "Chime", "mac": "cc:dd", "state": "CONNECTED", "fw_version": None}
+    ]
 
 
 def test_summarize_protect_status_handles_missing_arm_mode():
     summary = udmp.summarize_protect_status({}, {"name": "Sauron"}, [], [])
     assert summary["nvr"]["arm_status"] is None
+
+
+def test_summarize_protect_status_fills_firmware_from_legacy_clients():
+    meta = {"applicationVersion": "7.1.87"}
+    nvr = {"name": "Sauron", "armMode": {"status": "disabled"}}
+    cameras = [{"name": "Doorbell", "mac": "F4E2C60DA469", "state": "CONNECTED"}]
+    chimes = [{"name": "Chime", "mac": "28704E12384F", "state": "CONNECTED"}]
+    legacy_clients = [
+        {
+            "mac": "f4:e2:c6:0d:a4:69",
+            "unifi_device_info_from_ucore": {
+                "product_line": "PROTECT",
+                "name": "Doorbell",
+                "fw_version": "UVC.S5L.v5.3.95",
+            },
+        },
+        {
+            "mac": "28:70:4e:12:38:4f",
+            "unifi_device_info_from_ucore": {
+                "product_line": "PROTECT",
+                "name": "Chime",
+                "fw_version": "UP.esp32.v1.7.20",
+            },
+        },
+        {
+            "mac": "e4:38:83:1d:33:83",
+            "unifi_device_info_from_ucore": {
+                "product_line": "PROTECT",
+                "name": "Sauron",
+                "fw_version": "5.1.25",
+            },
+        },
+        {"mac": "aa:bb:cc:dd:ee:ff", "unifi_device_info_from_ucore": {}},
+    ]
+    summary = udmp.summarize_protect_status(meta, nvr, cameras, chimes, legacy_clients)
+    assert summary["nvr"]["fw_version"] == "5.1.25"
+    assert summary["cameras"][0]["fw_version"] == "UVC.S5L.v5.3.95"
+    assert summary["chimes"][0]["fw_version"] == "UP.esp32.v1.7.20"
 
 
 def test_cmd_protect_status_prints_json(capsys):
