@@ -138,6 +138,18 @@ currently rendered (same CSS/markup, pulled straight from the DOM) as a
 standalone file with no server dependency. Don't reintroduce a second,
 separately-maintained static build — it will drift from the live version.
 
+`saveSnapshot()` grabs the page's stylesheet via `document.getElementById
+('app-styles')`, not `document.querySelector('style')` — a real bug, not
+theoretical: a user with the Dark Reader browser extension got a
+completely unstyled snapshot (default serif font, white background, no
+dark theme) because Dark Reader injects its own `<style
+class="darkreader...">` tags into the page, and `querySelector('style')`
+grabbed one of those (an empty "fallback" one) instead of the app's own
+`<style>` block, which happened to come later in the DOM. The app's real
+`<style>` tag has `id="app-styles"` specifically so this can't happen
+again regardless of what else a browser extension injects — don't remove
+that id, and don't go back to a bare tag-name selector here.
+
 `docs/dashboard_server.py` binds `127.0.0.1` by default; if testing it
 manually (not through the webapp-testing skill's `with_server.py`, which
 cleans up after itself), check `lsof -i :8765` for an orphaned process
