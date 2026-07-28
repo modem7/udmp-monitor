@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Home Network — live dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
+<style id="app-styles">
 :root {
   --bg: #0a0e13;
   --surface: #121820;
@@ -492,7 +492,7 @@ function load() {
 function saveSnapshot() {
   var now = new Date();
   var stamp = now.toISOString().slice(0, 10);
-  var styleTag = document.querySelector('style').outerHTML;
+  var styleTag = document.getElementById('app-styles').outerHTML;
   var sidebarHtml = document.querySelector('.sidebar').outerHTML
     .replace(/Network reference .* live/, 'Network reference · static snapshot');
   var contentHtml = document.getElementById('content').innerHTML;
