@@ -97,9 +97,10 @@ def test_gather_live_includes_protect_when_configured():
     fake_udmp = _fake_udmp_for_gather()
     fake_udmp.get_protect_host.return_value = "192.168.0.207"
     fake_udmp.get_protect_api_key.return_value = "key"
+    fake_udmp.get_known_clients.return_value = ["sentinel-legacy-client"]
     fake_udmp.summarize_protect_status.return_value = {
         "application_version": "7.1.87",
-        "nvr": {"name": "Sauron", "arm_status": "disabled"},
+        "nvr": {"name": "Sauron", "arm_status": "disabled", "fw_version": "5.1.25"},
         "cameras": [],
         "chimes": [],
     }
@@ -107,6 +108,15 @@ def test_gather_live_includes_protect_when_configured():
         result = dashboard_server.gather_live()
     assert result["protect"] == fake_udmp.summarize_protect_status.return_value
     fake_udmp.make_protect_session.assert_called_once()
+    # firmware isn't in the Protect API at all — it's filled in from the
+    # legacy client list, so gather_live() must pass that list through.
+    fake_udmp.summarize_protect_status.assert_called_once_with(
+        fake_udmp.get_protect_meta.return_value,
+        fake_udmp.get_protect_nvr.return_value,
+        fake_udmp.get_protect_cameras.return_value,
+        fake_udmp.get_protect_chimes.return_value,
+        ["sentinel-legacy-client"],
+    )
 
 
 def test_gather_live_reports_protect_error_without_failing_whole_payload():

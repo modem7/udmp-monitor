@@ -150,24 +150,66 @@ def get_protect_chimes(session):
     return r.json()
 
 
-def summarize_protect_status(meta, nvr, cameras, chimes):
+def _normalize_mac(mac):
+    return (mac or "").replace(":", "").replace("-", "").upper()
+
+
+def summarize_protect_status(meta, nvr, cameras, chimes, legacy_clients=None):
     """Status/health only — deliberately excludes anything image/video
     related (snapshots, recordings, live view), which is a separate,
     more sensitive scope than what this was built for. No storage/disk
     usage endpoint exists in this API version (confirmed 404, not
     assumed) so that isn't included either.
+
+    The Protect Integration API doesn't expose firmware version anywhere —
+    confirmed absent from both the /cameras list and /cameras/{id} detail
+    response, and /nvrs has no version field either. If `legacy_clients`
+    (rest/user data, already fetched for summarize_known_clients/
+    summarize_protect_ai_ports) is supplied, firmware is filled in from
+    unifi_device_info_from_ucore instead — the same trick used elsewhere
+    for Protect metadata this API won't give up. Matched by MAC for
+    cameras/chimes (normalized: legacy MACs are colon-separated lowercase,
+    Protect API MACs are bare uppercase) and by name for the NVR, since its
+    official record has no MAC at all to match on.
     """
+    fw_by_mac = {}
+    fw_by_name = {}
+    for c in legacy_clients or []:
+        info = c.get("unifi_device_info_from_ucore") or {}
+        if info.get("product_line") != "PROTECT":
+            continue
+        fw = info.get("fw_version")
+        mac = _normalize_mac(c.get("mac"))
+        if mac:
+            fw_by_mac[mac] = fw
+        name = info.get("name") or c.get("name")
+        if name:
+            fw_by_name[name] = fw
+
     return {
         "application_version": meta.get("applicationVersion"),
         "nvr": {
             "name": nvr.get("name"),
             "arm_status": nvr.get("armMode", {}).get("status"),
+            "fw_version": fw_by_name.get(nvr.get("name")),
         },
         "cameras": [
-            {"name": c.get("name"), "mac": c.get("mac"), "state": c.get("state")} for c in cameras
+            {
+                "name": c.get("name"),
+                "mac": c.get("mac"),
+                "state": c.get("state"),
+                "fw_version": fw_by_mac.get(_normalize_mac(c.get("mac"))),
+            }
+            for c in cameras
         ],
         "chimes": [
-            {"name": c.get("name"), "mac": c.get("mac"), "state": c.get("state")} for c in chimes
+            {
+                "name": c.get("name"),
+                "mac": c.get("mac"),
+                "state": c.get("state"),
+                "fw_version": fw_by_mac.get(_normalize_mac(c.get("mac"))),
+            }
+            for c in chimes
         ],
     }
 
