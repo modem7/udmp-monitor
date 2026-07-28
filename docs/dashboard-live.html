@@ -399,20 +399,33 @@ function renderClients(knownClients, liveClients) {
     '<div class="table-wrap"><table><thead><tr><th>IP</th><th>MAC</th><th>Name</th><th>Network</th><th>Type</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
-function renderProtect(protect) {
-  if (!protect) {
-    return '<p class="section-intro">UDMP_PROTECT_HOST / UDMP_PROTECT_API_KEY not set — skipping NVR status.</p>';
-  }
-  if (protect.error) {
-    return '<div class="error-box"><strong>Protect query failed:</strong> ' + esc(protect.error) +
-      '<br>Check the NVR is reachable from this VM and the Protect credentials are valid.</div>';
-  }
+function renderProtect(protect, aiPorts) {
   function deviceRows(devices) {
     return devices.map(function(d) {
       var chip = d.state === 'CONNECTED' ? 'good' : 'critical';
       return '<tr><td><strong>' + esc(d.name) + '</strong></td><td class="mono dim">' + esc(d.mac) +
         '</td><td><span class="chip ' + chip + '">' + esc(d.state) + '</span></td></tr>';
     }).join('');
+  }
+  var aiPortBlock = '';
+  if (aiPorts && aiPorts.length) {
+    var aiRows = aiPorts.map(function(a) {
+      var chip = a.state === 'CONNECTED' ? 'good' : 'critical';
+      return '<tr><td><strong>' + esc(a.name) + '</strong></td><td class="mono dim">' + esc(a.mac) +
+        '</td><td class="mono">' + esc(a.ip) + '</td><td><span class="chip ' + chip + '">' + esc(a.state) +
+        '</span></td><td class="mono dim">' + esc(a.fw_version) + '</td></tr>';
+    }).join('');
+    aiPortBlock = '<p class="card-title" style="margin-top:24px">AI Port' + (aiPorts.length > 1 ? 's' : '') + '</p>' +
+      '<p class="section-intro">Not visible via the Protect API — identified through the legacy client list instead.</p>' +
+      '<div class="table-wrap"><table><thead><tr><th>Name</th><th>MAC</th><th>IP</th><th>State</th><th>Firmware</th></tr></thead><tbody>' +
+      aiRows + '</tbody></table></div>';
+  }
+  if (!protect) {
+    return '<p class="section-intro">UDMP_PROTECT_HOST / UDMP_PROTECT_API_KEY not set — skipping NVR status.</p>' + aiPortBlock;
+  }
+  if (protect.error) {
+    return '<div class="error-box"><strong>Protect query failed:</strong> ' + esc(protect.error) +
+      '<br>Check the NVR is reachable from this VM and the Protect credentials are valid.</div>' + aiPortBlock;
   }
   var armChip = protect.nvr.arm_status === 'disabled' ? 'neutral' : 'good';
   return '<div class="card"><p class="card-title">' + esc(protect.nvr.name) + '</p><table>' +
@@ -422,7 +435,7 @@ function renderProtect(protect) {
     '<div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Camera</th><th>MAC</th><th>State</th></tr></thead><tbody>' +
     deviceRows(protect.cameras) + '</tbody></table></div>' +
     '<div class="table-wrap"><table><thead><tr><th>Chime</th><th>MAC</th><th>State</th></tr></thead><tbody>' +
-    deviceRows(protect.chimes) + '</tbody></table></div>';
+    deviceRows(protect.chimes) + '</tbody></table></div>' + aiPortBlock;
 }
 
 function statsStrip(data) {
@@ -463,7 +476,7 @@ function load() {
         '<section class="doc-section" id="wireless"><h2 class="section-title"><span class="section-num">04</span> Wireless</h2>' + renderWireless(data.radios, data.radio_warnings, data.wlans) + '</section>' +
         '<section class="doc-section" id="firewall"><h2 class="section-title"><span class="section-num">05</span> Firewall</h2>' + renderFirewall(data.firewall_policies, data.firewall_groups) + '</section>' +
         '<section class="doc-section" id="clients"><h2 class="section-title"><span class="section-num">06</span> Clients</h2>' + renderClients(data.known_clients, data.clients) + '</section>' +
-        '<section class="doc-section" id="protect"><h2 class="section-title"><span class="section-num">07</span> Protect (NVR)</h2>' + renderProtect(data.protect) + '</section>';
+        '<section class="doc-section" id="protect"><h2 class="section-title"><span class="section-num">07</span> Protect (NVR)</h2>' + renderProtect(data.protect, data.ai_ports) + '</section>';
     })
     .catch(function(err) {
       document.getElementById('status-dot').className = 'status-dot error';

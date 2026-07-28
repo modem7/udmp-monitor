@@ -76,6 +76,7 @@ def _fake_udmp_for_gather():
         "get_known_clients",
         "summarize_known_clients",
         "summarize_networks",
+        "summarize_protect_ai_ports",
         "find_radio_overlaps",
     ):
         getattr(fake, name).return_value = []
@@ -117,3 +118,20 @@ def test_gather_live_reports_protect_error_without_failing_whole_payload():
         result = dashboard_server.gather_live()
     assert result["protect"] == {"error": "connection refused"}
     assert result["devices"] == []
+
+
+def test_gather_live_includes_ai_ports_independent_of_protect_config():
+    fake_udmp = _fake_udmp_for_gather()
+    fake_udmp.summarize_protect_ai_ports.return_value = [
+        {
+            "name": "UVC AI Port",
+            "mac": "1c:0b:8b:da:d1:e8",
+            "ip": "192.168.40.189",
+            "state": "CONNECTED",
+            "fw_version": "aiport4G.mt8390.v4.72.14.67.67484d6.241008.0451",
+        }
+    ]
+    with patch.object(dashboard_server, "udmp", fake_udmp):
+        result = dashboard_server.gather_live()
+    assert result["ai_ports"] == fake_udmp.summarize_protect_ai_ports.return_value
+    assert result["protect"] is None

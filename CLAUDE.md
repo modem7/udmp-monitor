@@ -92,6 +92,16 @@ user explicitly asks for them — they're not the target user.
     (cameras, NVR, chime) that reveals their real model — those devices
     never show up as adopted Network-app devices, only as clients. Worth
     checking there before assuming Protect hardware is undocumentable.
+  - The **UP-AI-Port** is a real, confirmed exception to "Protect hardware
+    is covered by the Protect Integration API": it doesn't appear in
+    `/cameras`, `/sensors`, `/lights`, `/viewers`, `/bridges`, or `/nvrs`
+    (checked all six directly against a real controller with one present —
+    all either empty or simply don't contain it). It's only visible via the
+    legacy `rest/user` client list, tagged with
+    `unifi_device_info_from_ucore.computed_model == "AI Port"` — see
+    `summarize_protect_ai_ports()`. Don't assume a device category is fully
+    absent from the Protect API just because the obvious endpoints don't
+    have it; check `rest/user` first.
   - `port_overrides` (per-port name/native-VLAN/PoE intent) only exists on
     `stat/device` (legacy), not the Integration API's device detail —
     that endpoint only has live port state/speed, not configured intent.

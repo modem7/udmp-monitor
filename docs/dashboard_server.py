@@ -47,9 +47,9 @@ def gather_live():
     )
     firewall_groups = udmp.get_firewall_groups(legacy, site_name)
     ports = udmp.summarize_switch_ports(legacy_devices, networks)
-    known_clients = udmp.summarize_known_clients(
-        udmp.get_known_clients(legacy, site_name), networks, fixed_ip_only=True
-    )
+    legacy_clients = udmp.get_known_clients(legacy, site_name)
+    known_clients = udmp.summarize_known_clients(legacy_clients, networks, fixed_ip_only=True)
+    ai_ports = udmp.summarize_protect_ai_ports(legacy_clients)
 
     protect = None
     if udmp.get_protect_host() and udmp.get_protect_api_key():
@@ -69,6 +69,7 @@ def gather_live():
 
     return {
         "protect": protect,
+        "ai_ports": ai_ports,
         "devices": devices,
         "clients": clients,
         "radios": radios,
