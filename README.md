@@ -140,8 +140,9 @@ docker run -d -p 8765:8765 --env-file .env udmp-monitor
 Or with the included `docker-compose.yml`:
 
 ```bash
-docker compose up -d
+docker compose up -d --remove-orphans
 docker compose down
+docker system prune -af --volumes
 ```
 
 It uses `network_mode: host` rather than a mapped port — the container
