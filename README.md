@@ -8,14 +8,21 @@
 > it hasn't been carefully hand-reviewed line by line. It works for my
 > setup; read the code before trusting it with yours.
 
-Read-only tooling for querying a UniFi Dream Machine Pro over its local
-UniFi OS Network Integration API (`/proxy/network/integration/v1`).
+Read-only tooling for a UniFi Dream Machine Pro (and optional Protect
+NVR) network — sites, devices, clients, radios, WLANs, firewall policies,
+networks/VLANs, switch ports, and camera/NVR status, across the official
+Network Integration API, the legacy session API (for config the
+Integration API doesn't expose), and the official Protect Integration
+API. Also includes a local live dashboard (`docs/`) and a Docker image to
+run it as a container.
 
-This is not a general-purpose CLI for humans to run interactively — it's
-built for Claude to invoke directly (via `python3 udmp.py <command>`) to
-answer diagnostic questions about the network on request. Output is JSON
-on stdout for reliable machine parsing rather than human-formatted tables.
-See `CLAUDE.md` for the operating rules.
+The CLI itself is not a general-purpose tool for humans to run
+interactively — it's built for Claude to invoke directly (via
+`python3 udmp.py <command>`) to answer diagnostic questions about the
+network on request. Output is JSON on stdout for reliable machine parsing
+rather than human-formatted tables. See `CLAUDE.md` for the operating
+rules. The live dashboard, by contrast, *is* meant for a human to open in
+a browser — see below.
 
 ![Dashboard screenshot](docs/images/dashboard-screenshot.png)
 

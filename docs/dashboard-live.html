@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Middle Earth network — live dashboard</title>
+<title>Home Network — live dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root {
@@ -228,7 +228,7 @@ a.jump:hover { text-decoration: underline; }
 <button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
 <div class="layout">
   <aside class="sidebar">
-    <div class="sidebar-brand">Middle Earth</div>
+    <div class="sidebar-brand">Home Network</div>
     <div class="sidebar-sub">Network reference &middot; live</div>
     <nav>
       <a class="section-label">Contents</a>
@@ -244,7 +244,7 @@ a.jump:hover { text-decoration: underline; }
   </aside>
   <main class="main">
     <header class="doc-header" id="overview">
-      <h1 class="doc-title">Middle Earth network</h1>
+      <h1 class="doc-title">Home Network</h1>
       <p class="doc-meta">Live dashboard &mdash; queries the controller fresh on every load</p>
     </header>
 
@@ -498,12 +498,12 @@ function saveSnapshot() {
   var contentHtml = document.getElementById('content').innerHTML;
 
   var snapshotDoc = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-    '<title>Middle Earth network — snapshot ' + stamp + '</title>' +
+    '<title>Home Network — snapshot ' + stamp + '</title>' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' + styleTag + '</head><body>' +
     '<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>' +
     '<div class="layout">' + sidebarHtml +
     '<main class="main"><header class="doc-header" id="overview">' +
-    '<h1 class="doc-title">Middle Earth network</h1>' +
+    '<h1 class="doc-title">Home Network</h1>' +
     '<p class="doc-meta">Static snapshot &middot; captured ' + now.toLocaleString() + '</p></header>' +
     '<div class="banner"><strong>Static snapshot.</strong> Captured from the live dashboard on ' +
     esc(now.toLocaleString()) + ' &mdash; safe to share, store, or back up as-is. Won’t reflect ' +
