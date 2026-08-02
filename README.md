@@ -114,10 +114,11 @@ If `--site` is omitted, the first site returned by the controller is used.
 
 ## Documentation
 
-`docs/NETWORK.md` is a disaster-recovery-level writeup of the whole
-network (hardware, WAN, VLANs, switch ports, wireless, firewall, clients)
-generated from live controller data — regenerate by re-running the
-gathering steps described at the bottom of that file.
+A disaster-recovery-level writeup of the whole network (hardware, WAN,
+VLANs, switch ports, wireless, firewall, clients) can be generated from
+live controller data the same way — see the CLI commands above. That
+document necessarily contains real topology detail, so it's kept in a
+separate private repo rather than here.
 
 **`docs/dashboard-live.html`** + **`docs/dashboard_server.py`** is a
 local-only live dashboard that queries the controller fresh on every load.
